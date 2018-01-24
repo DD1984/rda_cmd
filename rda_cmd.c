@@ -6,15 +6,12 @@
 
 #include "packet.h"
 
-
-int tty_fd;
-
 int main(void)
 {
-	if ((tty_fd = open_tty()) < 0)
+	if (open_tty() != 0)
 		return -1;
 	
 	
-	close_tty(tty_fd);
+	close_tty();
 	return 0;
 }

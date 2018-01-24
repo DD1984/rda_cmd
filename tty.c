@@ -8,6 +8,8 @@
 
 #include "tty.h"
 
+int tty_fd;
+
 int set_tty_attr(int fd_dev, int speed)
 {
 	struct termios tty_attr;
@@ -51,27 +53,32 @@ int set_tty_attr(int fd_dev, int speed)
 
 int open_tty(void)
 {
-	int fd = open(TTY_DEV, O_RDWR | O_NOCTTY | O_SYNC);
+	tty_fd = open(TTY_DEV, O_RDWR | O_NOCTTY | O_SYNC);
 
-	if (fd < 0) {
+	if (tty_fd < 0) {
 		printf("Can't open device: %s\n", TTY_DEV);
 		goto end;
 	}
 	
-	if (set_tty_attr(fd, BAUDRATE)) {
+	if (set_tty_attr(tty_fd, BAUDRATE)) {
 		printf("Can't set tty attr\n");
 		goto end;
 	}
 
-	return fd;
+	return 0;
 
 end:
-	if (fd >= 0)
-		close(fd);
+	if (tty_fd >= 0)
+		close(tty_fd);
 	return -1;
 }
 
-void close_tty(int fd)
+void close_tty(void)
 {
-	close(fd);
+	close(tty_fd);
+}
+
+int write_tty(char *buf, size_t len)
+{
+	return write(tty_fd, buf, len);
 }

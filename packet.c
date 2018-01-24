@@ -1,3 +1,7 @@
+#include <string.h>
+#include "types.h"
+#include "defs.h"
+#include "tty.h"
 #include "packet.h"
 
 
@@ -16,11 +20,16 @@ static int pdl_send_data(const u8 *data, u32 size, u8 flowid)
 	memset(cmd_buf, PDL_MAX_PKT_SIZE, 0);
 	memcpy(&cmd_buf[hdr_sz], data, size);
 
-	header->tag = PACKET_TAG;
+	header->tag = HOST_PACKET_TAG;
 	header->flowid = flowid;
 	/* carefully, header->pkt_size may be unaligned */
 	put_unaligned(size, &header->pkt_size); /* header->pkt_size = size; */
 
-	channel->write(cmd_buf, hdr_sz + size);
+	write_tty(cmd_buf, hdr_sz + size);
 	return 0;
+}
+
+int pdl_send_pkt(const u8 *data, u32 size)
+{
+	return pdl_send_data(data, size, HOST_PACKET_FLOWID);
 }
