@@ -16,6 +16,8 @@
 /*
  * for yaffs image, the packet length must be aligned to the (page_size+oob)
  */
+
+#define CONFIG_RDA_PDL2
 #if defined(CONFIG_RDA_PDL2)
 # define PDL_MAX_DATA_SIZE  270336  //(256*(1024 + 32)) == (64 * 4224)
 #elif defined(CONFIG_RDA_PDL1)
@@ -50,5 +52,8 @@ struct packet{
 	struct pdl_packet *pdl_pkt;
 	int state;
 };
+
+const char *str_rsp(int rsp);
+const char *str_cmd(int cmd);
 
 #endif

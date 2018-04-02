@@ -82,3 +82,8 @@ int write_tty(char *buf, size_t len)
 {
 	return write(tty_fd, buf, len);
 }
+
+int read_tty(char *buf, size_t len)
+{
+	return read(tty_fd, buf, len);
+}
