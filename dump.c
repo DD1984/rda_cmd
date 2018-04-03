@@ -4,7 +4,7 @@ void dump_line(void *addr, int len, int line_len)
 {
 	if (len <= 0)
 		return;
-	printf(" %04x  ", addr);
+	printf(" %04zx  ", (size_t)addr);
 	char *ptr = (char *)addr;
 	while (ptr - (char *)addr < len) {
 		printf("%02x ", (unsigned char)*ptr);

@@ -74,7 +74,7 @@ int send_cmd(struct command_header *cmd_hdr, u8 *data, u32 data_size)
 	char rcv_buf[PDL_MAX_DATA_SIZE];
 
 	struct pdl_packet *pdl_pkt = make_pdl_pkt(cmd_hdr, data);
-	struct packet *pkt = make_pkt(HOST_PACKET_TAG, HOST_PACKET_FLOWID, pdl_pkt, cmd_hdr->data_size);
+	struct packet *pkt = make_pkt(HOST_PACKET_TAG, HOST_PACKET_FLOWID, pdl_pkt, data_size);
 
 	send_pkt(pkt);
 
@@ -99,10 +99,21 @@ int send_cmd(struct command_header *cmd_hdr, u8 *data, u32 data_size)
 		printf("flowid error\n");
 		return -1; 
 	}
-	int rsp = le32toh(*(int *)(rcv_buf + sizeof(struct packet_header)));
-
-	printf("response: %s(%d)\n", str_rsp(rsp), rsp);
-	return 0;
+	if (pkt_hdr->flowid == FLOWID_ACK) {
+		int rsp = le32toh(*(int *)(rcv_buf + sizeof(struct packet_header)));
+		if (rsp != ACK) {
+				printf("response error: %s(%d)\n", str_rsp(rsp), rsp);
+				return -1;
+		}
+		return 0;
+	}
+	if (pkt_hdr->flowid == FLOWID_DATA) {
+		printf("response data:\n");
+		hex_dump(rcv_buf + sizeof(struct packet_header), /*le32toh(pkt_hdr->pkt_size)*/ 48);
+		return 0;
+	}
+	printf("unknown response\n");
+	return -1;
 }
 
 int send_cmd_only(u32 cmd_type)
@@ -213,7 +224,9 @@ int upload_file(char *path, u32 data_addr)
 		return -1;
 	}
 
-	upload_buf(buf, stat_buf.st_size, data_addr);
+	int ret = upload_buf(buf, stat_buf.st_size, data_addr);
+	if (ret)
+		return -1;
 
 	munmap(buf, stat_buf.st_size);
 
@@ -224,6 +237,8 @@ int upload_file(char *path, u32 data_addr)
 
 int main(void)
 {
+	int ret = 0;
+
 	if (open_tty() != 0)
 		return -1;
 
@@ -232,20 +247,35 @@ int main(void)
 		printf("can't connect to device\n");
 		return -1;
 	}
-	
-
+#if 1
 	//exec pdl1
-	upload_file(PDL1_PATH, PDL1_ADDR);
-	send_cmd_only(EXEC_DATA);
+	if (upload_file(PDL1_PATH, PDL1_ADDR)) {
+		printf("upload pdl1 failed\n");
+		return -1;
+	}
+	send_cmd_only(EXEC_DATA); //не возвращает статус
 
-	return 0;
 	sleep(3);
 
 	send_cmd_only(CONNECT);
+#endif
+	send_cmd_only(GET_VERSION);
+
+	printf("---\n");
+	char buf[256];
+	int len = read_tty(buf, sizeof(buf));
+	hex_dump(buf, len);
+	
+	send_cmd_only(GET_VERSION);
+
+	return 0;
 
 	//exec pdl2
-	upload_file(PDL2_PATH, PDL2_ADDR);
-	send_cmd_only(EXEC_DATA);
+	if (upload_file(PDL2_PATH, PDL2_ADDR)) {
+		printf("upload pdl2 failed\n");
+		return -1;
+	}
+	send_cmd_only(EXEC_DATA); //не возвращает статус
 
 
 	//send_cmd_only(GET_VERSION);
