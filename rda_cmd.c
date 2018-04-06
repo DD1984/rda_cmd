@@ -16,13 +16,20 @@
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof(x[0]))
 
+typedef struct {
+	u8 *data;
+	u32 size;
+} buf_t;
+
 void send_pkt(struct packet *pkt)
 {
+#if 0
 	hex_dump((char *)pkt, sizeof(struct packet_header));
 	hex_dump((char *)&(pkt->pdl_pkt->cmd_header), sizeof(struct command_header));
 	if (pkt->pdl_pkt->data)
 		hex_dump((char *)(pkt->pdl_pkt->data), pkt->pdl_pkt->cmd_header.data_size);
 	hex_dump((char *)&(pkt->state), sizeof(pkt->state));
+#endif
 
 	write_tty((char *)pkt, sizeof(struct packet_header));
 	write_tty((char *)&(pkt->pdl_pkt->cmd_header), sizeof(struct command_header));
@@ -67,13 +74,20 @@ void free_pkt_mem(struct packet *pkt)
 	free(pkt);
 }
 
-int send_cmd(struct command_header *cmd_hdr, u8 *data, u32 data_size)
+int send_cmd(struct command_header *cmd_hdr, buf_t *inbuf, buf_t *outbuf)
 {
-	printf("\ncmd: %s(%d)\n", str_cmd(cmd_hdr->cmd_type), cmd_hdr->cmd_type);
+	printf("exec cmd: %s(%d)\n", str_cmd(cmd_hdr->cmd_type), cmd_hdr->cmd_type);
 
 	char rcv_buf[PDL_MAX_DATA_SIZE];
 
-	struct pdl_packet *pdl_pkt = make_pdl_pkt(cmd_hdr, data);
+	u8 *data_buf = NULL;
+	u32 data_size = 0;
+	if (inbuf) {
+		data_buf = inbuf->data;
+		data_size = inbuf->size;
+	}
+
+	struct pdl_packet *pdl_pkt = make_pdl_pkt(cmd_hdr, data_buf);
 	struct packet *pkt = make_pkt(HOST_PACKET_TAG, HOST_PACKET_FLOWID, pdl_pkt, data_size);
 
 	send_pkt(pkt);
@@ -82,16 +96,14 @@ int send_cmd(struct command_header *cmd_hdr, u8 *data, u32 data_size)
 
 	memset(rcv_buf, 0, sizeof(rcv_buf));
 
-	printf("\n");
+	usleep(10000);
 
 	int len = read_tty(rcv_buf, sizeof(rcv_buf));
 
-	printf("len: %d\n", len);
-
-	if (len <= 0)
+	if (len <= 0) {
+		printf("data rcvd error, len: %d\n", len);
 		return -1;
-
-	hex_dump(rcv_buf, len);
+	}
 
 	struct packet_header *pkt_hdr = (struct packet_header *)rcv_buf;
 	
@@ -108,8 +120,14 @@ int send_cmd(struct command_header *cmd_hdr, u8 *data, u32 data_size)
 		return 0;
 	}
 	if (pkt_hdr->flowid == FLOWID_DATA) {
-		printf("response data:\n");
-		hex_dump(rcv_buf + sizeof(struct packet_header), /*le32toh(pkt_hdr->pkt_size)*/ 48);
+		if (!outbuf || (le32toh(pkt_hdr->pkt_size) > outbuf->size)) {
+			printf("small size of outbuf: data len: %d, buffer_size: %d\n", le32toh(pkt_hdr->pkt_size), outbuf->size);
+			return -1;
+		}
+
+		outbuf->size = le32toh(pkt_hdr->pkt_size);
+		memcpy(outbuf->data, rcv_buf + sizeof(struct packet_header), outbuf->size);
+
 		return 0;
 	}
 	printf("unknown response\n");
@@ -123,7 +141,7 @@ int send_cmd_only(u32 cmd_type)
 	memset(&cmd_hdr, 0, sizeof(struct command_header));
 	cmd_hdr.cmd_type = cmd_type;
 
-	return send_cmd(&cmd_hdr, NULL, 0);
+	return send_cmd(&cmd_hdr, NULL, NULL);
 }
 
 int allowed_commands[] = {
@@ -169,35 +187,40 @@ int allowed_commands[] = {
 #define CHUNK_SIZE 1024
 
 
-int upload_buf(u8 *buf, u32 data_size, u32 data_addr)
+int upload_buf(buf_t *buf, u32 data_addr)
 {
 	int ret;
 	struct command_header cmd_hdr;
 
+	if (!buf)
+		return -1;
+
 	cmd_hdr.cmd_type = START_DATA;
 	cmd_hdr.data_addr = data_addr;
-	cmd_hdr.data_size = data_size;
+	cmd_hdr.data_size = buf->size;
 
-	ret = send_cmd(&cmd_hdr, NULL, 0);
+	ret = send_cmd(&cmd_hdr, NULL, NULL);
 	if (ret)
 		return -1;
 
 	u32 total_send = 0;
-	while (total_send < data_size) {
-		
-		u32 chunk = CHUNK_SIZE;
-		if ((total_send + CHUNK_SIZE) > data_size)
-			chunk = data_size - total_send;
+	while (total_send < buf->size) {
+
+		buf_t chunk_buf;
+		chunk_buf.data = buf->data + total_send;
+		chunk_buf.size = CHUNK_SIZE;
+		if ((total_send + CHUNK_SIZE) > buf->size)
+			chunk_buf.size = buf->size - total_send;
 
 		cmd_hdr.cmd_type = MID_DATA;
 		cmd_hdr.data_addr = 0;
-		cmd_hdr.data_size = chunk;
+		cmd_hdr.data_size = chunk_buf.size;
 
-		ret = send_cmd(&cmd_hdr, buf + total_send, chunk);
+		ret = send_cmd(&cmd_hdr, &chunk_buf, NULL);
 		if (ret)
 			return -1;
 
-		total_send += chunk;
+		total_send += chunk_buf.size;
 	}
 
 	ret = send_cmd_only(END_DATA);
@@ -217,27 +240,34 @@ int upload_file(char *path, u32 data_addr)
 	struct stat stat_buf;
 	stat(path, &stat_buf);
 
-	char *buf = mmap(NULL, stat_buf.st_size, PROT_READ, MAP_SHARED, fd, 0);
-	if (buf == NULL) {
+	buf_t buf;
+
+	buf.size = stat_buf.st_size;
+	buf.data = mmap(NULL, stat_buf.st_size, PROT_READ, MAP_SHARED, fd, 0);
+	if (buf.data == NULL) {
 		close(fd);
 		printf("can't mmap file: %s\n", path);
+
+		close(fd);
 		return -1;
 	}
 
-	int ret = upload_buf(buf, stat_buf.st_size, data_addr);
+	int ret = upload_buf(&buf, data_addr);
 	if (ret)
-		return -1;
+		ret = -1;
 
-	munmap(buf, stat_buf.st_size);
-
+	munmap(buf.data, stat_buf.st_size);
 	close(fd);
-	
-	return 0;
+
+	return ret;
 }
 
 int main(void)
 {
 	int ret = 0;
+	u8 buffer[PDL_MAX_DATA_SIZE];
+	struct command_header cmd_hdr;
+	buf_t outbuf;
 
 	if (open_tty() != 0)
 		return -1;
@@ -247,38 +277,51 @@ int main(void)
 		printf("can't connect to device\n");
 		return -1;
 	}
-#if 1
-	//exec pdl1
-	if (upload_file(PDL1_PATH, PDL1_ADDR)) {
-		printf("upload pdl1 failed\n");
-		return -1;
+
+	//get pdl ver
+	memset(&cmd_hdr, 0, sizeof(struct command_header));
+	cmd_hdr.cmd_type = GET_VERSION;
+
+	outbuf.data = buffer;
+	outbuf.size = sizeof(buffer);
+
+	ret = send_cmd(&cmd_hdr, NULL, &outbuf);
+
+	if (!ret) {
+		printf("pdl version: %s\n", outbuf.data);
 	}
-	send_cmd_only(EXEC_DATA); //не возвращает статус
+	else {
+		//exec pdl1
+		printf("uploading pdl1\n");
+		if (upload_file(PDL1_PATH, PDL1_ADDR)) {
+			printf("upload pdl1 failed\n");
+			return -1;
+		}
+		send_cmd_only(EXEC_DATA); //не возвращает статус
 
-	sleep(3);
+		sleep(2);
 
-	send_cmd_only(CONNECT);
-#endif
-	send_cmd_only(GET_VERSION);
+		send_cmd_only(CONNECT);
 
-	printf("---\n");
-	char buf[256];
-	int len = read_tty(buf, sizeof(buf));
-	hex_dump(buf, len);
-	
-	send_cmd_only(GET_VERSION);
-
-	return 0;
-
-	//exec pdl2
-	if (upload_file(PDL2_PATH, PDL2_ADDR)) {
-		printf("upload pdl2 failed\n");
-		return -1;
+		//exec pdl2
+		printf("uploading pdl2\n");
+		if (upload_file(PDL2_PATH, PDL2_ADDR)) {
+			printf("upload pdl2 failed\n");
+			return -1;
+		}
+		send_cmd_only(EXEC_DATA); //не возвращает статус
 	}
-	send_cmd_only(EXEC_DATA); //не возвращает статус
 
+	//get pdl ver
+	memset(&cmd_hdr, 0, sizeof(struct command_header));
+	cmd_hdr.cmd_type = READ_PARTITION_TABLE;
 
-	//send_cmd_only(GET_VERSION);
+	outbuf.data = buffer;
+	outbuf.size = sizeof(buffer);
+
+	ret = send_cmd(&cmd_hdr, NULL, &outbuf);
+	if (!ret)
+		hex_dump(outbuf.data, outbuf.size);
 
 	close_tty();
 	return 0;
