@@ -74,7 +74,7 @@ void free_pkt_mem(struct packet *pkt)
 	free(pkt);
 }
 
-int send_cmd(struct command_header *cmd_hdr, buf_t *inbuf, buf_t *outbuf)
+int send_cmd(struct command_header *cmd_hdr, buf_t *to_dev, buf_t *from_dev)
 {
 	printf("exec cmd: %s(%d)\n", str_cmd(cmd_hdr->cmd_type), cmd_hdr->cmd_type);
 
@@ -82,9 +82,9 @@ int send_cmd(struct command_header *cmd_hdr, buf_t *inbuf, buf_t *outbuf)
 
 	u8 *data_buf = NULL;
 	u32 data_size = 0;
-	if (inbuf) {
-		data_buf = inbuf->data;
-		data_size = inbuf->size;
+	if (to_dev) {
+		data_buf = to_dev->data;
+		data_size = to_dev->size;
 	}
 
 	struct pdl_packet *pdl_pkt = make_pdl_pkt(cmd_hdr, data_buf);
@@ -120,13 +120,13 @@ int send_cmd(struct command_header *cmd_hdr, buf_t *inbuf, buf_t *outbuf)
 		return 0;
 	}
 	if (pkt_hdr->flowid == FLOWID_DATA) {
-		if (!outbuf || (le32toh(pkt_hdr->pkt_size) > outbuf->size)) {
-			printf("small size of outbuf: data len: %d, buffer_size: %d\n", le32toh(pkt_hdr->pkt_size), outbuf->size);
+		if (!from_dev || (le32toh(pkt_hdr->pkt_size) > from_dev->size)) {
+			printf("small size of outbuf: data len: %d, buffer_size: %d\n", le32toh(pkt_hdr->pkt_size), from_dev->size);
 			return -1;
 		}
 
-		outbuf->size = le32toh(pkt_hdr->pkt_size);
-		memcpy(outbuf->data, rcv_buf + sizeof(struct packet_header), outbuf->size);
+		from_dev->size = le32toh(pkt_hdr->pkt_size);
+		memcpy(from_dev->data, rcv_buf + sizeof(struct packet_header), from_dev->size);
 
 		return 0;
 	}
@@ -134,49 +134,49 @@ int send_cmd(struct command_header *cmd_hdr, buf_t *inbuf, buf_t *outbuf)
 	return -1;
 }
 
-int send_cmd_only(u32 cmd_type)
+// команда без данных
+int send_cmd_only(u32 cmd)
 {
 	struct command_header cmd_hdr;
 
 	memset(&cmd_hdr, 0, sizeof(struct command_header));
-	cmd_hdr.cmd_type = cmd_type;
+	cmd_hdr.cmd_type = cmd;
 
 	return send_cmd(&cmd_hdr, NULL, NULL);
 }
 
-int allowed_commands[] = {
-	//ERASE_FLASH,
-	//ERASE_PARTITION,
-	//ERASE_ALL,
-	//START_DATA,
-	//MID_DATA,
-	//END_DATA,
-	//EXEC_DATA,
-	//READ_FLASH,
-	//READ_PARTITION,
-	//NORMAL_RESET,
-	READ_CHIPID,
-	//SET_BAUDRATE,
-	//FORMAT_FLASH,
-	//READ_PARTITION_TABLE,
-	//READ_IMAGE_ATTR,
-	GET_VERSION,
-	//SET_FACTMODE,
-	//SET_CALIBMODE,
-	SET_PDL_DBG,
-	//CHECK_PARTITION_TABLE,
-	//POWER_OFF,
-	//IMAGE_LIST,
-	//GET_SWCFG_REG,
-	//SET_SWCFG_REG,
-	//GET_HWCFG_REG,
-	//SET_HWCFG_REG,
-	//EXIT_AND_RELOAD,
-	GET_SECURITY,
-	//HW_TEST,
-	GET_PDL_LOG,
-	//DOWNLOAD_FINISH,
-};
+// команда с заполненным заголовком
+int send_cmd_hdr(u32 cmd, u32 data_addr, u32 data_size)
+{
+	struct command_header cmd_hdr;
+
+	cmd_hdr.cmd_type = cmd;
+	cmd_hdr.data_addr = data_addr;
+	cmd_hdr.data_size = data_size;
+
+	return send_cmd(&cmd_hdr, NULL, NULL);
+}
+
+int send_cmd_data_to_dev(u32 cmd, buf_t *to_dev)
+{
+	struct command_header cmd_hdr;
+
+	cmd_hdr.cmd_type = cmd;
+	cmd_hdr.data_addr = 0;
+	cmd_hdr.data_size = to_dev->size;
+
+	return send_cmd(&cmd_hdr, to_dev, NULL);
+}
+
+int send_cmd_data_from_dev(u32 cmd, buf_t *from_dev)
+{
+	struct command_header cmd_hdr;
+
+	memset(&cmd_hdr, 0, sizeof(struct command_header));
+	cmd_hdr.cmd_type = cmd;
+
+	int ret = send_cmd(&cmd_hdr, NULL, from_dev);
+}
 
 #define PDL1_PATH "pdl1.bin"
 #define PDL2_PATH "pdl2.bin"
@@ -190,16 +190,11 @@ int allowed_commands[] = {
 int upload_buf(buf_t *buf, u32 data_addr)
 {
 	int ret;
-	struct command_header cmd_hdr;
 
 	if (!buf)
 		return -1;
 
-	cmd_hdr.cmd_type = START_DATA;
-	cmd_hdr.data_addr = data_addr;
-	cmd_hdr.data_size = buf->size;
-
-	ret = send_cmd(&cmd_hdr, NULL, NULL);
+	ret = send_cmd_hdr(START_DATA, data_addr, buf->size);
 	if (ret)
 		return -1;
 
@@ -212,11 +207,7 @@ int upload_buf(buf_t *buf, u32 data_addr)
 		if ((total_send + CHUNK_SIZE) > buf->size)
 			chunk_buf.size = buf->size - total_send;
 
-		cmd_hdr.cmd_type = MID_DATA;
-		cmd_hdr.data_addr = 0;
-		cmd_hdr.data_size = chunk_buf.size;
-
-		ret = send_cmd(&cmd_hdr, &chunk_buf, NULL);
+		ret = send_cmd_data_to_dev(MID_DATA, &chunk_buf);
 		if (ret)
 			return -1;
 
@@ -262,6 +253,60 @@ int upload_file(char *path, u32 data_addr)
 	return ret;
 }
 
+int read_partition_table(void)
+{
+	u8 buffer[PDL_MAX_DATA_SIZE];
+	buf_t from_dev;
+
+	from_dev.data = buffer;
+	from_dev.size = sizeof(buffer);
+
+	int ret = send_cmd_data_from_dev(READ_PARTITION_TABLE, &from_dev);
+	if (!ret) {
+		from_dev.data[from_dev.size + 1] = 0;
+		printf("[%s]\n", from_dev.data);
+	}
+
+	return ret;
+}
+
+int get_pdl_version(char **ver)
+{
+	u8 buffer[PDL_MAX_DATA_SIZE];
+	buf_t from_dev;
+
+	from_dev.data = buffer;
+	from_dev.size = sizeof(buffer);
+
+	int ret = send_cmd_data_from_dev(GET_VERSION, &from_dev);
+	if (!ret) {
+		if (ver) {
+			*ver = malloc(from_dev.size);
+			memcpy(*ver, from_dev.data, from_dev.size);
+		}
+	}
+
+	return ret;
+}
+
+int get_pdl_log(void)
+{
+	u8 buffer[PDL_MAX_DATA_SIZE];
+	buf_t from_dev;
+
+	from_dev.data = buffer;
+	from_dev.size = sizeof(buffer);
+
+	int ret = send_cmd_data_from_dev(GET_PDL_LOG, &from_dev);
+	if (!ret) {
+		//from_dev.data[from_dev.size + 1] = 0;
+		//printf("[%s]\n", from_dev.data);
+		hex_dump(from_dev.data, from_dev.size);
+	}
+
+	return ret;
+}
+
 int main(void)
 {
 	int ret = 0;
@@ -278,19 +323,7 @@ int main(void)
 		return -1;
 	}
 
-	//get pdl ver
-	memset(&cmd_hdr, 0, sizeof(struct command_header));
-	cmd_hdr.cmd_type = GET_VERSION;
-
-	outbuf.data = buffer;
-	outbuf.size = sizeof(buffer);
-
-	ret = send_cmd(&cmd_hdr, NULL, &outbuf);
-
-	if (!ret) {
-		printf("pdl version: %s\n", outbuf.data);
-	}
-	else {
+	if (get_pdl_version(NULL)) {
 		//exec pdl1
 		printf("uploading pdl1\n");
 		if (upload_file(PDL1_PATH, PDL1_ADDR)) {
@@ -312,16 +345,14 @@ int main(void)
 		send_cmd_only(EXEC_DATA); //не возвращает статус
 	}
 
-	//get pdl ver
-	memset(&cmd_hdr, 0, sizeof(struct command_header));
-	cmd_hdr.cmd_type = READ_PARTITION_TABLE;
+	char *ver;
+	get_pdl_version(&ver);
+	printf("[%s]\n", ver);
+	free(ver);
 
-	outbuf.data = buffer;
-	outbuf.size = sizeof(buffer);
+	read_partition_table();
 
-	ret = send_cmd(&cmd_hdr, NULL, &outbuf);
-	if (!ret)
-		hex_dump(outbuf.data, outbuf.size);
+	//get_pdl_log();
 
 	close_tty();
 	return 0;
