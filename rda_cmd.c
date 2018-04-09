@@ -16,10 +16,6 @@
 #include "protocol.h"
 #include "cmd_defs.h"
 
-#define ARRAY_SIZE(x) (sizeof(x) / sizeof(x[0]))
-
-
-
 #define PDL1_PATH "pdl1.bin"
 #define PDL2_PATH "pdl2.bin"
 
@@ -112,14 +108,13 @@ int read_partition_table(void)
 	return ret;
 }
 
-void read_partition(char *name)
+void read_partition(char *name, u32 offset, u32 size)
 {
-	#define PART_SIZE (2 * 1024 * 1024)
 	struct command_header cmd_hdr;
 
 	cmd_hdr.cmd_type = READ_PARTITION;
-	cmd_hdr.data_addr = 0;
-	cmd_hdr.data_size = PART_SIZE;
+	cmd_hdr.data_addr = offset;
+	cmd_hdr.data_size = size;
 
 	buf_t to_dev;
 
@@ -127,13 +122,12 @@ void read_partition(char *name)
 	to_dev.size = strlen(name) + 1;
 
 	buf_t from_dev;
-	char buf[PART_SIZE];
-	from_dev.data = buf;
-	from_dev.size = sizeof(buf);
+	from_dev.data = malloc(size);
+	from_dev.size = size;
 
 	int ret = send_cmd(&cmd_hdr, &to_dev, &from_dev);
-	if (!ret)
-		hex_dump(from_dev.data, from_dev.size);
+	//if (!ret)
+		//hex_dump(from_dev.data, from_dev.size);
 }
 
 int get_pdl_version(char **ver)
@@ -221,6 +215,7 @@ int main(void)
 	printf("[%s]\n", ver);
 	free(ver);
 
+#if 1
 	set_pdl_dbg(
 		PDL_DBG_PDL |
 		//PDL_DBG_USB_EP0 |
@@ -230,10 +225,18 @@ int main(void)
 		PDL_DBG_PDL_VERBOSE |
 		PDL_EXTENDED_STATUS
 	);
+#endif
 
 	read_partition_table();
 
-	read_partition("misc");
+	//read_partition("bootloader", 0, 8192);
+	//printf("------------\n");
+	//sleep(1);
+	read_partition("bootloader", 4096, 4096);
+
+	sleep(1);
+	read_partition("bootloader", 0, 4096);
+
 
 	//get_pdl_log();
 

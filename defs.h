@@ -3,6 +3,8 @@
 
 #include <stdio.h>
 
+#define ARRAY_SIZE(x) (sizeof(x) / sizeof(x[0]))
+
 typedef struct {
 	u8 *data;
 	u32 size;

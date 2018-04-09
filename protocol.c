@@ -12,7 +12,8 @@
 
 void send_pkt(struct packet *pkt)
 {
-#if 0
+#if 1
+	printf("cmd: %s(%d)\n", str_cmd(pkt->pdl_pkt->cmd_header.cmd_type), pkt->pdl_pkt->cmd_header.cmd_type);
 	hex_dump((char *)pkt, sizeof(struct packet_header));
 	hex_dump((char *)&(pkt->pdl_pkt->cmd_header), sizeof(struct command_header));
 	if (pkt->pdl_pkt->data)
@@ -85,7 +86,10 @@ int send_cmd(struct command_header *cmd_hdr, buf_t *to_dev, buf_t *from_dev)
 
 	usleep(10000);
 
-	int len = read_tty(rcv_buf, sizeof(rcv_buf));
+	int len = read_tty(rcv_buf, sizeof(struct packet_header));
+	printf("header:\n");
+	hex_dump(rcv_buf, sizeof(struct packet_header));
+	printf("-------\n");
 
 	if (len <= 0) {
 		printf("cmd: %s(%d), data rcvd error, len: %d\n",  str_cmd(cmd_hdr->cmd_type), cmd_hdr->cmd_type, len);
@@ -93,7 +97,13 @@ int send_cmd(struct command_header *cmd_hdr, buf_t *to_dev, buf_t *from_dev)
 	}
 
 	struct packet_header *pkt_hdr = (struct packet_header *)rcv_buf;
-	
+
+	printf("data size: %d\n", le32toh(pkt_hdr->pkt_size));
+
+	len = 0;
+	while (len < le32toh(pkt_hdr->pkt_size))
+		len += read_tty(rcv_buf + sizeof(struct packet_header) + len, le32toh(pkt_hdr->pkt_size) - len);
+
 	if (pkt_hdr->flowid == FLOWID_ERROR) {
 		printf("cmd: %s(%d), flowid error\n", str_cmd(cmd_hdr->cmd_type), cmd_hdr->cmd_type);
 		return -1; 
@@ -118,6 +128,7 @@ int send_cmd(struct command_header *cmd_hdr, buf_t *to_dev, buf_t *from_dev)
 		return 0;
 	}
 	printf("cmd: %s(%d), unknown response\n", str_cmd(cmd_hdr->cmd_type), cmd_hdr->cmd_type);
+	//hex_dump(rcv_buf, len);
 	return -1;
 }
 
