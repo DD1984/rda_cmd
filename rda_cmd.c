@@ -27,14 +27,14 @@ void send_pkt(struct packet *pkt)
 	hex_dump((char *)pkt, sizeof(struct packet_header));
 	hex_dump((char *)&(pkt->pdl_pkt->cmd_header), sizeof(struct command_header));
 	if (pkt->pdl_pkt->data)
-		hex_dump((char *)(pkt->pdl_pkt->data), pkt->pdl_pkt->cmd_header.data_size);
+		hex_dump((char *)(pkt->pdl_pkt->data), le32toh(pkt->pkt_header.pkt_size) - sizeof(struct command_header));
 	hex_dump((char *)&(pkt->state), sizeof(pkt->state));
 #endif
 
 	write_tty((char *)pkt, sizeof(struct packet_header));
 	write_tty((char *)&(pkt->pdl_pkt->cmd_header), sizeof(struct command_header));
 	if (pkt->pdl_pkt->data)
-		write_tty((char *)(pkt->pdl_pkt->data), pkt->pdl_pkt->cmd_header.data_size);
+		write_tty((char *)(pkt->pdl_pkt->data), le32toh(pkt->pkt_header.pkt_size) - sizeof(struct command_header));
 	write_tty((char *)&(pkt->state), sizeof(pkt->state));
 }
 
@@ -76,8 +76,6 @@ void free_pkt_mem(struct packet *pkt)
 
 int send_cmd(struct command_header *cmd_hdr, buf_t *to_dev, buf_t *from_dev)
 {
-	printf("exec cmd: %s(%d)\n", str_cmd(cmd_hdr->cmd_type), cmd_hdr->cmd_type);
-
 	char rcv_buf[PDL_MAX_DATA_SIZE];
 
 	u8 *data_buf = NULL;
@@ -101,27 +99,27 @@ int send_cmd(struct command_header *cmd_hdr, buf_t *to_dev, buf_t *from_dev)
 	int len = read_tty(rcv_buf, sizeof(rcv_buf));
 
 	if (len <= 0) {
-		printf("data rcvd error, len: %d\n", len);
+		printf("cmd: %s(%d), data rcvd error, len: %d\n",  str_cmd(cmd_hdr->cmd_type), cmd_hdr->cmd_type, len);
 		return -1;
 	}
 
 	struct packet_header *pkt_hdr = (struct packet_header *)rcv_buf;
 	
 	if (pkt_hdr->flowid == FLOWID_ERROR) {
-		printf("flowid error\n");
+		printf("cmd: %s(%d), flowid error\n", str_cmd(cmd_hdr->cmd_type), cmd_hdr->cmd_type);
 		return -1; 
 	}
 	if (pkt_hdr->flowid == FLOWID_ACK) {
 		int rsp = le32toh(*(int *)(rcv_buf + sizeof(struct packet_header)));
 		if (rsp != ACK) {
-				printf("response error: %s(%d)\n", str_rsp(rsp), rsp);
+				printf("cmd: %s(%d), response error: %s(%d)\n", str_cmd(cmd_hdr->cmd_type), cmd_hdr->cmd_type, str_rsp(rsp), rsp);
 				return -1;
 		}
 		return 0;
 	}
 	if (pkt_hdr->flowid == FLOWID_DATA) {
 		if (!from_dev || (le32toh(pkt_hdr->pkt_size) > from_dev->size)) {
-			printf("small size of outbuf: data len: %d, buffer_size: %d\n", le32toh(pkt_hdr->pkt_size), from_dev->size);
+			printf("cmd: %s(%d), small size of outbuf: data len: %d, buffer_size: %d\n", str_cmd(cmd_hdr->cmd_type), cmd_hdr->cmd_type, le32toh(pkt_hdr->pkt_size), from_dev->size);
 			return -1;
 		}
 
@@ -130,7 +128,7 @@ int send_cmd(struct command_header *cmd_hdr, buf_t *to_dev, buf_t *from_dev)
 
 		return 0;
 	}
-	printf("unknown response\n");
+	printf("cmd: %s(%d), unknown response\n", str_cmd(cmd_hdr->cmd_type), cmd_hdr->cmd_type);
 	return -1;
 }
 
@@ -270,6 +268,30 @@ int read_partition_table(void)
 	return ret;
 }
 
+void read_partition(char *name)
+{
+	#define PART_SIZE (2 * 1024 * 1024)
+	struct command_header cmd_hdr;
+
+	cmd_hdr.cmd_type = READ_PARTITION;
+	cmd_hdr.data_addr = 0;
+	cmd_hdr.data_size = PART_SIZE;
+
+	buf_t to_dev;
+
+	to_dev.data = name;
+	to_dev.size = strlen(name) + 1;
+
+	buf_t from_dev;
+	char buf[PART_SIZE];
+	from_dev.data = buf;
+	from_dev.size = sizeof(buf);
+
+	int ret = send_cmd(&cmd_hdr, &to_dev, &from_dev);
+	if (!ret)
+		hex_dump(from_dev.data, from_dev.size);
+}
+
 int get_pdl_version(char **ver)
 {
 	u8 buffer[PDL_MAX_DATA_SIZE];
@@ -287,6 +309,11 @@ int get_pdl_version(char **ver)
 	}
 
 	return ret;
+}
+
+int set_pdl_dbg(u32 dbg)
+{
+	return send_cmd_hdr(SET_PDL_DBG, dbg, 0);
 }
 
 int get_pdl_log(void)
@@ -350,7 +377,19 @@ int main(void)
 	printf("[%s]\n", ver);
 	free(ver);
 
+	set_pdl_dbg(
+		PDL_DBG_PDL |
+		//PDL_DBG_USB_EP0 |
+		//PDL_DBG_USB_SERIAL |
+		PDL_DBG_RW_CHECK |
+		PDL_DBG_FACTORY_PART |
+		PDL_DBG_PDL_VERBOSE |
+		PDL_EXTENDED_STATUS
+	);
+
 	read_partition_table();
+
+	read_partition("misc");
 
 	//get_pdl_log();
 
