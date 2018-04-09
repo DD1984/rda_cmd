@@ -29,8 +29,8 @@ int set_tty_attr(int fd_dev, int speed)
 											// no canonical processing
 	tty_attr.c_oflag = 0;					// no remapping, no delays
 
-	//tty_attr.c_cc[VMIN]  = 0;				// read doesn't block
-	//tty_attr.c_cc[VTIME] = 1;				// 0.1 seconds read timeout
+	tty_attr.c_cc[VMIN]  = 0;				// read doesn't block
+	tty_attr.c_cc[VTIME] = 10;				// 10 x 0.1 seconds read timeout
 
 	tty_attr.c_iflag &= ~(IXON | IXOFF | IXANY); // shut off xon/xoff ctrl
 

@@ -22,8 +22,7 @@
 #define PDL1_ADDR 0x00100100 //spl-uboot start addr
 #define PDL2_ADDR 0x80008000 
 
-#define CHUNK_SIZE 1024
-
+#define UPLOAD_CHUNK_SIZE 1024
 
 int upload_buf(buf_t *buf, u32 data_addr)
 {
@@ -41,8 +40,8 @@ int upload_buf(buf_t *buf, u32 data_addr)
 
 		buf_t chunk_buf;
 		chunk_buf.data = buf->data + total_send;
-		chunk_buf.size = CHUNK_SIZE;
-		if ((total_send + CHUNK_SIZE) > buf->size)
+		chunk_buf.size = UPLOAD_CHUNK_SIZE;
+		if ((total_send + UPLOAD_CHUNK_SIZE) > buf->size)
 			chunk_buf.size = buf->size - total_send;
 
 		ret = send_cmd_data_to_dev(MID_DATA, &chunk_buf);
@@ -108,26 +107,44 @@ int read_partition_table(void)
 	return ret;
 }
 
-void read_partition(char *name, u32 offset, u32 size)
+#define DOWNLOAD_CHUNK_SIZE (4 * 1024) //nand page size
+
+void read_partition(char *name,  char *out_file)
 {
-	struct command_header cmd_hdr;
+	u32 part_size = 2 * 1024 * 1024;
+	u32 total_rcv = 0;
+	char buf[DOWNLOAD_CHUNK_SIZE];
 
-	cmd_hdr.cmd_type = READ_PARTITION;
-	cmd_hdr.data_addr = offset;
-	cmd_hdr.data_size = size;
+	int fd = open(out_file, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR);
 
-	buf_t to_dev;
+	while (total_rcv < part_size) {
 
-	to_dev.data = name;
-	to_dev.size = strlen(name) + 1;
+		struct command_header cmd_hdr;
 
-	buf_t from_dev;
-	from_dev.data = malloc(size);
-	from_dev.size = size;
+		cmd_hdr.cmd_type = READ_PARTITION;
+		cmd_hdr.data_addr = total_rcv;
+		cmd_hdr.data_size = DOWNLOAD_CHUNK_SIZE;
 
-	int ret = send_cmd(&cmd_hdr, &to_dev, &from_dev);
-	//if (!ret)
-		//hex_dump(from_dev.data, from_dev.size);
+		buf_t to_dev;
+
+		to_dev.data = name;
+		to_dev.size = strlen(name) + 1;
+
+		buf_t from_dev;
+		from_dev.data = buf;
+		from_dev.size = DOWNLOAD_CHUNK_SIZE;
+
+		int ret = send_cmd(&cmd_hdr, &to_dev, &from_dev);
+		if (ret) {
+			close(fd);
+			unlink(out_file);
+			printf("download error\n");
+			return;
+		}
+		write(fd, buf, DOWNLOAD_CHUNK_SIZE);
+		total_rcv += DOWNLOAD_CHUNK_SIZE;
+	}
+	close(fd);
 }
 
 int get_pdl_version(char **ver)
@@ -215,7 +232,6 @@ int main(void)
 	printf("[%s]\n", ver);
 	free(ver);
 
-#if 1
 	set_pdl_dbg(
 		PDL_DBG_PDL |
 		//PDL_DBG_USB_EP0 |
@@ -225,18 +241,10 @@ int main(void)
 		PDL_DBG_PDL_VERBOSE |
 		PDL_EXTENDED_STATUS
 	);
-#endif
 
 	read_partition_table();
 
-	//read_partition("bootloader", 0, 8192);
-	//printf("------------\n");
-	//sleep(1);
-	read_partition("bootloader", 4096, 4096);
-
-	sleep(1);
-	read_partition("bootloader", 0, 4096);
-
+	read_partition("modem", "modem.bin");
 
 	//get_pdl_log();
 

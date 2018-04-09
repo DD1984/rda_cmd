@@ -4,7 +4,6 @@ void dump_line(void *addr, int len, int line_len)
 {
 	if (len <= 0)
 		return;
-	printf(" %04zx  ", (size_t)addr);
 	char *ptr = (char *)addr;
 	while (ptr - (char *)addr < len) {
 		printf("%02x ", (unsigned char)*ptr);
@@ -28,6 +27,7 @@ void _hex_dump(void *addr, int len, int line_len)
 {
 	char *ptr = (char *)addr;
 	while (ptr - (char *)addr < len) {
+		//printf(" %04zx  ", (size_t)ptr - (size_t)addr);
 		dump_line(ptr, ((char *)addr + len - ptr > line_len) ? line_len : (char *)addr + len - ptr, line_len);
 		ptr += line_len;
 	}
