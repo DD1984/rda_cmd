@@ -1,5 +1,5 @@
 
-SRC =  rda_cmd.c tty.c packet.c dump.c
+SRC =  rda_cmd.c tty.c protocol.c packet.c dump.c
 
 
 all:

@@ -3,8 +3,9 @@
 
 #include <stdio.h>
 
-#define put_unaligned(a, b) *b = a
-
-#define pdl_error printf
+typedef struct {
+	u8 *data;
+	u32 size;
+} buf_t;
 
 #endif
