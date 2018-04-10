@@ -110,15 +110,28 @@ int read_partition_table(void)
 }
 
 #define DOWNLOAD_CHUNK_SIZE (4 * 1024) //nand page size
+#define FACTORYDATA_SIZE (32 * 1024)
 
 int read_partition(char *name,  char *out_file)
 {
-	u64 part_size = get_part_size(name);
-	if (part_size == 0)
-		return -1;
+	char *buf;
+	u32 buf_size;
+	u64 part_size;
+
+	if (strcmp("factorydata", name) == 0) {
+		buf_size = FACTORYDATA_SIZE;
+		part_size = FACTORYDATA_SIZE;
+	}
+	else {
+		buf_size = DOWNLOAD_CHUNK_SIZE;
+		part_size = get_part_size(name);
+		if (part_size == 0)
+			return -1;
+	}
+
+	buf = malloc(buf_size);
 
 	u64 total_rcv = 0;
-	char buf[DOWNLOAD_CHUNK_SIZE];
 
 	int fd = open(out_file, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR);
 
@@ -128,7 +141,7 @@ int read_partition(char *name,  char *out_file)
 
 		cmd_hdr.cmd_type = READ_PARTITION;
 		cmd_hdr.data_addr = total_rcv;
-		cmd_hdr.data_size = DOWNLOAD_CHUNK_SIZE;
+		cmd_hdr.data_size = buf_size;
 
 		buf_t to_dev;
 
@@ -137,18 +150,21 @@ int read_partition(char *name,  char *out_file)
 
 		buf_t from_dev;
 		from_dev.data = buf;
-		from_dev.size = DOWNLOAD_CHUNK_SIZE;
+		from_dev.size = buf_size;
 
 		int ret = send_cmd(&cmd_hdr, &to_dev, &from_dev);
 		if (ret) {
+			free(buf);
 			close(fd);
 			unlink(out_file);
 			printf("download error\n");
 			return -1;
 		}
-		write(fd, buf, DOWNLOAD_CHUNK_SIZE);
-		total_rcv += DOWNLOAD_CHUNK_SIZE;
+		write(fd, buf, buf_size);
+		total_rcv += buf_size;
 	}
+
+	free(buf);
 	close(fd);
 
 	return 0;
@@ -257,7 +273,7 @@ int main(void)
 	}
 
 
-	read_partition("bootloader", "bootloader.bin");
+	read_partition("factorydata", "factorydata.bin");
 
 	close_tty();
 	return 0;
