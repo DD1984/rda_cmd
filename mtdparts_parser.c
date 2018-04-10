@@ -299,3 +299,8 @@ u64 get_part_size(char *name)
 
 	return 0;
 }
+
+void clear_parse_result(void)
+{
+	part_delall(&parts);
+}

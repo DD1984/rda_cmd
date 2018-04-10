@@ -91,7 +91,7 @@ int upload_file(char *path, u32 data_addr)
 	return ret;
 }
 
-int read_partition_table(void)
+int read_partition_table(char **parts)
 {
 	u8 buffer[PDL_MAX_DATA_SIZE];
 	buf_t from_dev;
@@ -102,17 +102,17 @@ int read_partition_table(void)
 	int ret = send_cmd_data_from_dev(READ_PARTITION_TABLE, &from_dev);
 	if (!ret) {
 		from_dev.data[from_dev.size + 1] = 0;
-
-		ret = parse_mtdparts(from_dev.data);
+		*parts = malloc(from_dev.size + 1);
+		memcpy(*parts, from_dev.data, from_dev.size + 1);
 	}
 
 	return ret;
 }
 
-#define DOWNLOAD_CHUNK_SIZE (256 * 1024) //кратно nand page size
+#define DOWNLOAD_CHUNK_SIZE (256 * 1024) //кратно nand page size 4kb
 #define FACTORYDATA_SIZE (32 * 1024)
 
-int read_partition(char *name,  char *out_file)
+int read_partition(char *name, char *out_file)
 {
 	char *buf;
 	u32 buf_size;
@@ -124,16 +124,35 @@ int read_partition(char *name,  char *out_file)
 	}
 	else {
 		buf_size = DOWNLOAD_CHUNK_SIZE;
-		part_size = get_part_size(name);
-		if (part_size == 0)
+		char *parts = NULL;
+
+		if (read_partition_table(&parts)) {
+			printf("[%s] read partition table failed\n", __func__);
 			return -1;
+		}
+
+		if (parse_mtdparts(parts)) {
+			printf("[%s] parse partition table failed\n", __func__);
+			free(parts);
+			return -1;
+		}
+
+		part_size = get_part_size(name);
+
+		free(parts);
+		clear_parse_result();
+
+		if (part_size == 0) {
+			printf("[%s] get partition [%s] size failed\n", __func__, name);
+			return -1;
+		}
 	}
 
 	buf = malloc(buf_size);
 
 	u64 total_rcv = 0;
 
-	int fd = open(out_file, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR);
+	int fd = open(out_file, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
 
 	while (total_rcv < part_size) {
 
@@ -157,7 +176,7 @@ int read_partition(char *name,  char *out_file)
 			free(buf);
 			close(fd);
 			unlink(out_file);
-			printf("download error\n");
+			printf("[%s] download error\n", __func__);
 			return -1;
 		}
 		write(fd, buf, buf_size);
@@ -212,12 +231,53 @@ int get_pdl_log(void)
 	return ret;
 }
 
-int main(void)
+void show_help(void)
 {
-	int ret = 0;
-	u8 buffer[PDL_MAX_DATA_SIZE];
-	struct command_header cmd_hdr;
-	buf_t outbuf;
+	printf("\tget_parts                           - read partition table\n");
+	printf("\tget_ver                             - read partition table\n");
+	printf("\tread [partition name] [output file] - read partition to file\n");
+}
+
+typedef enum {
+	GET_PARTS,
+	GET_VER,
+	READ_PART,
+} user_cmd_t;
+
+int main(int argc, char *argv[])
+{
+	user_cmd_t user_cmd;
+	char *buf_ptr;
+	char *part_name = NULL;
+	char *file_name = NULL;
+
+	if (argc == 2) {
+		if (!strcmp(argv[1], "get_parts")) {
+			user_cmd = GET_PARTS;
+		}
+		else if (!strcmp(argv[1], "get_ver")) {
+			user_cmd = GET_VER;
+		}
+		else {
+			show_help();
+			return 0;
+		}
+	}
+	else if (argc == 4) {
+		if (!strcmp(argv[1], "read")) {
+			user_cmd = READ_PART;
+			part_name = argv[2];
+			file_name = argv[3];
+		}
+		else {
+			show_help();
+			return 0;
+		}
+	}
+	else {
+		show_help();
+		return 0;
+	}
 
 	if (open_tty() != 0)
 		return -1;
@@ -252,12 +312,6 @@ int main(void)
 		sleep(2);
 	}
 
-	char *ver = NULL;
-	get_pdl_version(&ver);
-	printf("[%s]\n", ver);
-	if (ver)
-		free(ver);
-
 	set_pdl_dbg(
 		PDL_DBG_PDL |
 		//PDL_DBG_USB_EP0 |
@@ -268,14 +322,30 @@ int main(void)
 		PDL_EXTENDED_STATUS
 	);
 
-	if (read_partition_table()) {
-		close_tty();
-		printf("can't read partition table\n");
-		return -1;
+	switch (user_cmd) {
+		case GET_PARTS:
+			buf_ptr = NULL;
+			if (!read_partition_table(&buf_ptr))
+				printf("%s\n", buf_ptr);
+			else
+				printf("get partition table failed\n");
+			if (buf_ptr)
+				free(buf_ptr);
+		break;
+		case GET_VER:
+			buf_ptr = NULL;
+			if (!get_pdl_version(&buf_ptr))
+				printf("%s\n", buf_ptr);
+			else
+				printf("get version failed\n");
+			if (buf_ptr)
+				free(buf_ptr);
+		break;
+		case READ_PART:
+			if (read_partition(part_name, file_name))
+				printf("read [%s] partition failed\n", part_name);
+		break;
 	}
-
-
-	read_partition("bootloader", "bootloader.bin");
 
 	close_tty();
 	return 0;
