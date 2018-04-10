@@ -15,6 +15,7 @@
 
 #include "protocol.h"
 #include "cmd_defs.h"
+#include "mtdparts_parser.h"
 
 #define PDL1_PATH "pdl1.bin"
 #define PDL2_PATH "pdl2.bin"
@@ -101,7 +102,8 @@ int read_partition_table(void)
 	int ret = send_cmd_data_from_dev(READ_PARTITION_TABLE, &from_dev);
 	if (!ret) {
 		from_dev.data[from_dev.size + 1] = 0;
-		printf("[%s]\n", from_dev.data);
+
+		ret = parse_mtdparts(from_dev.data);
 	}
 
 	return ret;
@@ -109,10 +111,13 @@ int read_partition_table(void)
 
 #define DOWNLOAD_CHUNK_SIZE (4 * 1024) //nand page size
 
-void read_partition(char *name,  char *out_file)
+int read_partition(char *name,  char *out_file)
 {
-	u32 part_size = 2 * 1024 * 1024;
-	u32 total_rcv = 0;
+	u64 part_size = get_part_size(name);
+	if (part_size == 0)
+		return -1;
+
+	u64 total_rcv = 0;
 	char buf[DOWNLOAD_CHUNK_SIZE];
 
 	int fd = open(out_file, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR);
@@ -139,12 +144,14 @@ void read_partition(char *name,  char *out_file)
 			close(fd);
 			unlink(out_file);
 			printf("download error\n");
-			return;
+			return -1;
 		}
 		write(fd, buf, DOWNLOAD_CHUNK_SIZE);
 		total_rcv += DOWNLOAD_CHUNK_SIZE;
 	}
 	close(fd);
+
+	return 0;
 }
 
 int get_pdl_version(char **ver)
@@ -227,10 +234,11 @@ int main(void)
 		send_cmd_only(EXEC_DATA); //не возвращает статус
 	}
 
-	char *ver;
+	char *ver = NULL;
 	get_pdl_version(&ver);
 	printf("[%s]\n", ver);
-	free(ver);
+	if (ver)
+		free(ver);
 
 	set_pdl_dbg(
 		PDL_DBG_PDL |
@@ -242,11 +250,14 @@ int main(void)
 		PDL_EXTENDED_STATUS
 	);
 
-	read_partition_table();
+	if (read_partition_table()) {
+		close_tty();
+		printf("can't read partition table\n");
+		return -1;
+	}
 
-	read_partition("modem", "modem.bin");
 
-	//get_pdl_log();
+	read_partition("bootloader", "bootloader.bin");
 
 	close_tty();
 	return 0;

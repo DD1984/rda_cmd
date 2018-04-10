@@ -1,9 +1,15 @@
+TARGET = rda_cmd
+CC = gcc
+C_SOURCES =  rda_cmd.c tty.c protocol.c packet.c dump.c mtdparts_parser.c
 
-SRC =  rda_cmd.c tty.c protocol.c packet.c dump.c
+OBJECTS = $(C_SOURCES:.c=.o)
+vpath %.c $(sort $(dir $(C_SOURCES)))
 
+%.o: %.c
+	$(CC) -c $(CFLAGS) $< -o $@
 
-all:
-	gcc $(SRC) -o rda_cmd
+all: $(OBJECTS)
+	$(CC) $(OBJECTS) $(LDFLAGS) -o $(TARGET)
 
 clean:
-	rm *.o rda_cmd
+	-rm -fR .dep $(OBJECTS) $(TARGET)

@@ -99,17 +99,18 @@ int send_cmd(struct command_header *cmd_hdr, buf_t *to_dev, buf_t *from_dev)
 	while (len < le32toh(pkt_hdr->pkt_size))
 		len += read_tty(rcv_buf + sizeof(struct packet_header) + len, le32toh(pkt_hdr->pkt_size) - len);
 
-	if (pkt_hdr->flowid == FLOWID_ERROR) {
-		printf("cmd: %s(%d), flowid error\n", str_cmd(cmd_hdr->cmd_type), cmd_hdr->cmd_type);
-		return -1; 
-	}
-	if (pkt_hdr->flowid == FLOWID_ACK) {
-		int rsp = le32toh(*(int *)(rcv_buf + sizeof(struct packet_header)));
-		if (rsp != ACK) {
-				printf("cmd: %s(%d), response error: %s(%d)\n", str_cmd(cmd_hdr->cmd_type), cmd_hdr->cmd_type, str_rsp(rsp), rsp);
-				return -1;
-		}
+	u32 flowid = pkt_hdr->flowid;
+	u32 rsp = le32toh(*(int *)(rcv_buf + sizeof(struct packet_header)));
+
+	if (flowid == FLOWID_ACK && rsp == ACK)
 		return 0;
+
+	if ((flowid == FLOWID_ERROR || flowid == FLOWID_ACK) && (rsp != ACK)) {
+		printf("cmd: %s(%d), %s, response: %s(%d)\n",
+			str_cmd(cmd_hdr->cmd_type), cmd_hdr->cmd_type,
+			flowid == FLOWID_ERROR ? "FLOWID_ERROR" : "FLOWID_ACK",
+			str_rsp(rsp), rsp);
+		return -1;
 	}
 	if (pkt_hdr->flowid == FLOWID_DATA) {
 		if (!from_dev || (le32toh(pkt_hdr->pkt_size) > from_dev->size)) {
