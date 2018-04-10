@@ -1,0 +1,4 @@
+*.o
+*.bin
+!pdl1.bin
+!pdl2.bin
