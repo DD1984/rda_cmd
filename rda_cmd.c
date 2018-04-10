@@ -23,7 +23,7 @@
 #define PDL1_ADDR 0x00100100 //spl-uboot start addr
 #define PDL2_ADDR 0x80008000 
 
-#define UPLOAD_CHUNK_SIZE 1024
+#define UPLOAD_CHUNK_SIZE (4 * 1024)
 
 int upload_buf(buf_t *buf, u32 data_addr)
 {
@@ -109,7 +109,7 @@ int read_partition_table(void)
 	return ret;
 }
 
-#define DOWNLOAD_CHUNK_SIZE (4 * 1024) //nand page size
+#define DOWNLOAD_CHUNK_SIZE (256 * 1024) //кратно nand page size
 #define FACTORYDATA_SIZE (32 * 1024)
 
 int read_partition(char *name,  char *out_file)
@@ -248,6 +248,8 @@ int main(void)
 			return -1;
 		}
 		send_cmd_only(EXEC_DATA); //не возвращает статус
+
+		sleep(2);
 	}
 
 	char *ver = NULL;
@@ -273,7 +275,7 @@ int main(void)
 	}
 
 
-	read_partition("factorydata", "factorydata.bin");
+	read_partition("bootloader", "bootloader.bin");
 
 	close_tty();
 	return 0;
