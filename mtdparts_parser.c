@@ -112,7 +112,7 @@ static int part_parse(const char *const partdef, const char **ret, struct part_i
 	} else {
 		size = memsize_parse(p, &p);
 		if (size < MIN_PART_SIZE) {
-			printf("partition size too small (%llx)\n", size);
+			printf("partition size too small (%lx)\n", size);
 			return 1;
 		}
 	}
@@ -184,14 +184,14 @@ static int part_parse(const char *const partdef, const char **ret, struct part_i
 		part->auto_name = 0;
 	} else {
 		/* auto generated name in form of size@offset */
-		sprintf(part->name, "0x%llx@0x%llx", size, offset);
+		sprintf(part->name, "0x%lx@0x%lx", size, offset);
 		part->auto_name = 1;
 	}
 
 	part->name[name_len - 1] = '\0';
 	INIT_LIST_HEAD(&part->link);
 
-	debug("+ partition: name %-22s size 0x%llx offset 0x%llx mask flags %d\n",
+	debug("+ partition: name %-22s size 0x%lx offset 0x%lx mask flags %d\n",
 			part->name, part->size,
 			part->offset, part->mask_flags);
 
@@ -280,7 +280,7 @@ void print_parts(void)
 
 	list_for_each(entry, &parts) {
 		part = list_entry(entry, struct part_info, link);
-		printf("partition: name %-22s size 0x%llx offset 0x%llx mask flags %d\n",
+		printf("partition: name %-22s size 0x%lx offset 0x%lx mask flags %d\n",
 				part->name, part->size,
 				part->offset, part->mask_flags);
 	}
