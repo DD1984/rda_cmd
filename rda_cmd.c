@@ -385,7 +385,7 @@ int main(int argc, char *argv[])
 		case GET_PARTS:
 			buf_ptr = NULL;
 			if (!read_partition_table(&buf_ptr))
-				printf("%s\n", buf_ptr);
+				printf("[%s]\n", buf_ptr);
 			else
 				printf("get partition table failed\n");
 			if (buf_ptr)
@@ -394,7 +394,7 @@ int main(int argc, char *argv[])
 		case GET_VER:
 			buf_ptr = NULL;
 			if (!get_pdl_version(&buf_ptr))
-				printf("%s\n", buf_ptr);
+				printf("[%s]\n", buf_ptr);
 			else
 				printf("get version failed\n");
 			if (buf_ptr)
@@ -412,6 +412,8 @@ int main(int argc, char *argv[])
 			if (write_partition(part_name, file_name))
 				printf("write [%s] partition failed\n", part_name);
 		break;
+		default:
+			printf("unknown user cmd: %d\n", user_cmd);
 	}
 
 	close_tty();
