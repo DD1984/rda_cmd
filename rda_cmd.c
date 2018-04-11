@@ -16,6 +16,7 @@
 #include "protocol.h"
 #include "cmd_defs.h"
 #include "mtdparts_parser.h"
+#include "crc32.h"
 
 #define PDL1_PATH "pdl1.bin"
 #define PDL2_PATH "pdl2.bin"
@@ -25,18 +26,34 @@
 
 #define UPLOAD_CHUNK_SIZE (4 * 1024)
 
-int upload_buf(buf_t *buf, u32 data_addr)
+int upload_buf(buf_t *buf, char *part_name, u32 data_addr)
 {
 	int ret;
 
 	if (!buf)
 		return -1;
 
-	ret = send_cmd_hdr(START_DATA, data_addr, buf->size);
+	struct command_header cmd_hdr;
+	buf_t to_dev;
+
+	cmd_hdr.cmd_type = START_DATA;
+	cmd_hdr.data_addr = data_addr;
+	cmd_hdr.data_size = buf->size;
+
+	memset(&to_dev, 0, sizeof(buf_t));
+
+	if (part_name) {
+		to_dev.data = part_name;
+		to_dev.size = strlen(part_name) + 1;
+	}
+
+	ret = send_cmd(&cmd_hdr, &to_dev, NULL);
+
 	if (ret)
 		return -1;
 
 	u32 total_send = 0;
+	u32 frame_count = 0;
 	while (total_send < buf->size) {
 
 		buf_t chunk_buf;
@@ -45,21 +62,30 @@ int upload_buf(buf_t *buf, u32 data_addr)
 		if ((total_send + UPLOAD_CHUNK_SIZE) > buf->size)
 			chunk_buf.size = buf->size - total_send;
 
-		ret = send_cmd_data_to_dev(MID_DATA, &chunk_buf);
+		cmd_hdr.cmd_type = MID_DATA;
+		cmd_hdr.data_addr = frame_count++;
+		cmd_hdr.data_size = chunk_buf.size;
+
+		ret = send_cmd(&cmd_hdr, &chunk_buf, NULL);
 		if (ret)
 			return -1;
 
 		total_send += chunk_buf.size;
 	}
 
-	ret = send_cmd_only(END_DATA);
+	u32 crc = htole32(crc32(0, buf->data, buf->size));
+
+	to_dev.data = (char *)&crc;
+	to_dev.size = sizeof(crc);
+
+	ret = send_cmd_data_to_dev(END_DATA, &to_dev);
 	if (ret)
 		return -1;
 
 	return 0;
 }
 
-int upload_file(char *path, u32 data_addr)
+int upload_file(char *path, char *part_name, u32 data_addr)
 {
 	int fd = open(path, O_RDONLY);
 	if (fd < 0) {
@@ -81,7 +107,7 @@ int upload_file(char *path, u32 data_addr)
 		return -1;
 	}
 
-	int ret = upload_buf(&buf, data_addr);
+	int ret = upload_buf(&buf, part_name, data_addr);
 	if (ret)
 		ret = -1;
 
@@ -189,6 +215,21 @@ int read_partition(char *name, char *out_file)
 	return 0;
 }
 
+int erase_partition(char *name)
+{
+	buf_t to_dev;
+
+	to_dev.data = name;
+	to_dev.size = strlen(name) + 1;
+
+	return send_cmd_data_to_dev(ERASE_PARTITION, &to_dev);
+}
+
+int write_partition(char *name, char *in_file)
+{
+	return upload_file(in_file, name, 0);
+}
+
 int get_pdl_version(char **ver)
 {
 	u8 buffer[PDL_MAX_DATA_SIZE];
@@ -236,12 +277,16 @@ void show_help(void)
 	printf("\tget_parts                           - read partition table\n");
 	printf("\tget_ver                             - read partition table\n");
 	printf("\tread [partition name] [output file] - read partition to file\n");
+	printf("\terase [partition name]              - erase partition\n");
+	printf("\twrite [partition name] [input file] - write partition from file\n");
 }
 
 typedef enum {
 	GET_PARTS,
 	GET_VER,
 	READ_PART,
+	ERASE_PART,
+	WRITE_PART,
 } user_cmd_t;
 
 int main(int argc, char *argv[])
@@ -263,11 +308,24 @@ int main(int argc, char *argv[])
 			return 0;
 		}
 	}
+	else if (argc == 3) {
+		part_name = argv[2];
+		if (!strcmp(argv[1], "erase")) {
+			user_cmd = ERASE_PART;
+		}
+		else {
+			show_help();
+			return 0;
+		}
+	}
 	else if (argc == 4) {
+		part_name = argv[2];
+		file_name = argv[3];
 		if (!strcmp(argv[1], "read")) {
 			user_cmd = READ_PART;
-			part_name = argv[2];
-			file_name = argv[3];
+		}
+		else if (!strcmp(argv[1], "write")) {
+			user_cmd = WRITE_PART;
 		}
 		else {
 			show_help();
@@ -291,7 +349,7 @@ int main(int argc, char *argv[])
 	if (get_pdl_version(NULL)) {
 		//exec pdl1
 		printf("uploading pdl1\n");
-		if (upload_file(PDL1_PATH, PDL1_ADDR)) {
+		if (upload_file(PDL1_PATH, NULL, PDL1_ADDR)) {
 			printf("upload pdl1 failed\n");
 			return -1;
 		}
@@ -303,7 +361,7 @@ int main(int argc, char *argv[])
 
 		//exec pdl2
 		printf("uploading pdl2\n");
-		if (upload_file(PDL2_PATH, PDL2_ADDR)) {
+		if (upload_file(PDL2_PATH, NULL, PDL2_ADDR)) {
 			printf("upload pdl2 failed\n");
 			return -1;
 		}
@@ -318,8 +376,8 @@ int main(int argc, char *argv[])
 		//PDL_DBG_USB_SERIAL |
 		PDL_DBG_RW_CHECK |
 		PDL_DBG_FACTORY_PART |
-		PDL_DBG_PDL_VERBOSE |
-		PDL_EXTENDED_STATUS
+		PDL_DBG_PDL_VERBOSE
+		//| PDL_EXTENDED_STATUS // ??? дополнительный ответ при прошивке если размер файла больше 24мб
 	);
 
 	switch (user_cmd) {
@@ -344,6 +402,14 @@ int main(int argc, char *argv[])
 		case READ_PART:
 			if (read_partition(part_name, file_name))
 				printf("read [%s] partition failed\n", part_name);
+		break;
+		case ERASE_PART:
+			if (erase_partition(part_name))
+				printf("erase [%s] partition failed\n", part_name);
+		break;
+		case WRITE_PART:
+			if (write_partition(part_name, file_name))
+				printf("write [%s] partition failed\n", part_name);
 		break;
 	}
 

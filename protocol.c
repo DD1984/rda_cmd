@@ -70,7 +70,7 @@ int send_cmd(struct command_header *cmd_hdr, buf_t *to_dev, buf_t *from_dev)
 
 	u8 *data_buf = NULL;
 	u32 data_size = 0;
-	if (to_dev) {
+	if (to_dev && (to_dev->size > 0)) {
 		data_buf = to_dev->data;
 		data_size = to_dev->size;
 	}
