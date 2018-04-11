@@ -411,16 +411,25 @@ int main(int argc, char *argv[])
 				free(buf_ptr);
 		break;
 		case READ_PART:
-			if (read_partition(part_name, file_name))
-				printf("read [%s] partition failed\n", part_name);
+			printf("read [%s] partition ", part_name);
+			if (!read_partition(part_name, file_name))
+				printf("DONE\n");
+			else
+				printf("failed\n", part_name);
 		break;
 		case ERASE_PART:
-			if (erase_partition(part_name))
-				printf("erase [%s] partition failed\n", part_name);
+			printf("erase [%s] partition ", part_name);
+			if (!erase_partition(part_name))
+				printf("DONE\n");
+			else
+				printf("failed\n", part_name);
 		break;
 		case WRITE_PART:
-			if (write_partition(part_name, file_name))
-				printf("write [%s] partition failed\n", part_name);
+			printf("write [%s] partition ", part_name);
+			if (!write_partition(part_name, file_name))
+				printf("DONE\n");
+			else
+				printf("failed\n", part_name);
 		break;
 		default:
 			printf("unknown user cmd: %d\n", user_cmd);
