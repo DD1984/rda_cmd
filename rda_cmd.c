@@ -24,9 +24,10 @@
 #define PDL1_ADDR 0x00100100 //spl-uboot start addr
 #define PDL2_ADDR 0x80008000 
 
-#define UPLOAD_CHUNK_SIZE (4 * 1024)
+#define UPLOAD_CHUNK_SIZE_PDL1 (4 * 1024)
+#define UPLOAD_CHUNK_SIZE_PDL2 (256 * 1024)
 
-int upload_buf(buf_t *buf, char *part_name, u32 data_addr)
+int upload_buf(buf_t *buf, char *part_name, u32 data_addr, u32 chunk_size)
 {
 	int ret;
 
@@ -58,8 +59,8 @@ int upload_buf(buf_t *buf, char *part_name, u32 data_addr)
 
 		buf_t chunk_buf;
 		chunk_buf.data = buf->data + total_send;
-		chunk_buf.size = UPLOAD_CHUNK_SIZE;
-		if ((total_send + UPLOAD_CHUNK_SIZE) > buf->size)
+		chunk_buf.size = chunk_size;
+		if ((total_send + chunk_size) > buf->size)
 			chunk_buf.size = buf->size - total_send;
 
 		cmd_hdr.cmd_type = MID_DATA;
@@ -85,7 +86,7 @@ int upload_buf(buf_t *buf, char *part_name, u32 data_addr)
 	return 0;
 }
 
-int upload_file(char *path, char *part_name, u32 data_addr)
+int upload_file(char *path, char *part_name, u32 data_addr, u32 chunk_size)
 {
 	int fd = open(path, O_RDONLY);
 	if (fd < 0) {
@@ -107,7 +108,7 @@ int upload_file(char *path, char *part_name, u32 data_addr)
 		return -1;
 	}
 
-	int ret = upload_buf(&buf, part_name, data_addr);
+	int ret = upload_buf(&buf, part_name, data_addr, chunk_size);
 	if (ret)
 		ret = -1;
 
@@ -227,7 +228,7 @@ int erase_partition(char *name)
 
 int write_partition(char *name, char *in_file)
 {
-	return upload_file(in_file, name, 0);
+	return upload_file(in_file, name, 0, UPLOAD_CHUNK_SIZE_PDL2);
 }
 
 int get_pdl_version(char **ver)
@@ -349,7 +350,7 @@ int main(int argc, char *argv[])
 	if (get_pdl_version(NULL)) {
 		//exec pdl1
 		printf("uploading pdl1\n");
-		if (upload_file(PDL1_PATH, NULL, PDL1_ADDR)) {
+		if (upload_file(PDL1_PATH, NULL, PDL1_ADDR, UPLOAD_CHUNK_SIZE_PDL1)) {
 			printf("upload pdl1 failed\n");
 			return -1;
 		}
@@ -361,7 +362,7 @@ int main(int argc, char *argv[])
 
 		//exec pdl2
 		printf("uploading pdl2\n");
-		if (upload_file(PDL2_PATH, NULL, PDL2_ADDR)) {
+		if (upload_file(PDL2_PATH, NULL, PDL2_ADDR, UPLOAD_CHUNK_SIZE_PDL1)) {
 			printf("upload pdl2 failed\n");
 			return -1;
 		}
