@@ -425,21 +425,21 @@ int main(int argc, char *argv[])
 			if (!read_partition(part_name, file_name))
 				printf("DONE\n");
 			else
-				printf("failed\n", part_name);
+				printf("failed\n");
 		break;
 		case ERASE_PART:
 			printf("erase [%s] partition ", part_name);
 			if (!erase_partition(part_name))
 				printf("DONE\n");
 			else
-				printf("failed\n", part_name);
+				printf("failed\n");
 		break;
 		case WRITE_PART:
 			printf("write [%s] partition ", part_name);
 			if (!write_partition(part_name, file_name))
 				printf("DONE\n");
 			else
-				printf("failed\n", part_name);
+				printf("failed\n");
 		break;
 		default:
 			printf("unknown user cmd: %d\n", user_cmd);
