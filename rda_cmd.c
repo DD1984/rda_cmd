@@ -276,7 +276,7 @@ int get_pdl_log(void)
 void show_help(void)
 {
 	printf("\tget_parts                           - read partition table\n");
-	printf("\tget_ver                             - read partition table\n");
+	printf("\tget_ver                             - read PDL version\n");
 	printf("\tread [partition name] [output file] - read partition to file\n");
 	printf("\terase [partition name]              - erase partition\n");
 	printf("\twrite [partition name] [input file] - write partition from file\n");
