@@ -10,6 +10,31 @@
 
 int tty_fd;
 
+int get_tty_timeout(void)
+{
+	struct termios tty_attr;
+	memset(&tty_attr, 0, sizeof(tty_attr));
+
+	if (tcgetattr(tty_fd, &tty_attr))
+		return -1;
+	 return tty_attr.c_cc[VTIME] / 10;
+}
+
+int set_tty_timeout(int timeout)
+{
+	struct termios tty_attr;
+	memset(&tty_attr, 0, sizeof(tty_attr));
+
+	if (tcgetattr(tty_fd, &tty_attr))
+		return -1;
+
+	tty_attr.c_cc[VTIME] = timeout * 10;
+
+	if (tcsetattr(tty_fd, 0, &tty_attr))
+		return -1;
+	return 0;
+}
+
 int set_tty_attr(int fd_dev, int speed)
 {
 	struct termios tty_attr;

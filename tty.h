@@ -10,4 +10,7 @@ void close_tty(void);
 int read_tty(char *buf, size_t len);
 int write_tty(char *buf, size_t len);
 
+int get_tty_timeout(void);
+int set_tty_timeout(int timeout);
+
 #endif

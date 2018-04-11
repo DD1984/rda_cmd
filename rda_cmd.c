@@ -349,7 +349,17 @@ int main(int argc, char *argv[])
 		return -1;
 	}
 
-	if (get_pdl_version(NULL)) {
+	int tty_timeout = get_tty_timeout();
+	if (tty_timeout != -1)
+		set_tty_timeout(1); // т.к перввый вызов get_pdl_version() может не вернуть результаов так как в BootRom нет такой команды
+
+	int ret = get_pdl_version(NULL);
+
+	if (tty_timeout != -1)
+		set_tty_timeout(tty_timeout); //возвращаем обратно
+
+
+	if (ret) {
 		//exec pdl1
 		printf("uploading pdl1\n");
 		if (upload_file(PDL1_PATH, NULL, PDL1_ADDR, UPLOAD_CHUNK_SIZE_PDL1)) {
