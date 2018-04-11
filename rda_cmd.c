@@ -341,6 +341,8 @@ int main(int argc, char *argv[])
 	if (open_tty() != 0)
 		return -1;
 
+	int tty_opened = 1;
+
 	if (send_cmd_only(CONNECT)) {
 		close_tty();
 		printf("can't connect to device\n");
@@ -369,6 +371,14 @@ int main(int argc, char *argv[])
 		send_cmd_only(EXEC_DATA); //не возвращает статус
 
 		sleep(2);
+
+		close_tty(); //костыль для сброса буферов, нужно разобраться, т.к. и pdl1 и pdl2 после запуска отправляют ACK и можно убрать sleep()
+		tty_opened  = 0;
+	}
+
+	if (!tty_opened) {
+		open_tty();
+		send_cmd_only(CONNECT);
 	}
 
 	set_pdl_dbg(
