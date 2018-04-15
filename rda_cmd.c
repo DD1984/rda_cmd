@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <stdint.h>
 
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -17,6 +18,7 @@
 #include "cmd_defs.h"
 #include "mtdparts_parser.h"
 #include "crc32.h"
+#include "fullfw.h"
 
 #define PDL1_PATH "pdl1.bin"
 #define PDL2_PATH "pdl2.bin"
@@ -117,6 +119,52 @@ int upload_file(char *path, char *part_name, u32 data_addr, u32 chunk_size)
 
 	return ret;
 }
+
+int fullfw(char *path)
+{
+	int fd = open(path, O_RDONLY);
+	if (fd < 0) {
+		printf("can't open file: %s\n", path);
+		return -1;
+	}
+	struct stat stat_buf;
+	stat(path, &stat_buf);
+
+	char *buf = mmap(NULL, stat_buf.st_size, PROT_READ, MAP_SHARED, fd, 0);
+	if (buf == NULL) {
+		close(fd);
+		printf("can't mmap file: %s\n", path);
+
+		close(fd);
+		return -1;
+	}
+
+	uint32_t parts_cnt = *(uint32_t *)buf;
+	printf("parts count: %d\n", parts_cnt);
+
+	part_info_t *ptr = (part_info_t *)(buf + sizeof(uint32_t));
+	int i;
+	for (i = 0; i < parts_cnt; i++) {
+		printf("=================\n");
+		printf("offset: 0x%08x\n", ptr->offset);
+		printf("size: 0x%08x\n", ptr->size);
+		printf("unknown1: 0x%08x\n", ptr->unknown1);
+		printf("loadaddr: 0x%08x\n", ptr->loadaddr);
+		printf("name: %s\n", ptr->name);
+		printf("part: %s\n", ptr->part);
+		printf("path: %s\n", ptr->path);
+		printf("unknown3: 0x%08x\n", ptr->unknown3);
+		printf("unknown4: 0x%08x\n", ptr->unknown4);
+		hex_dump(buf + sizeof(uint32_t) + parts_cnt * sizeof(part_info_t) + ptr->offset, 128);
+		ptr++;
+	}
+
+	munmap(buf, stat_buf.st_size);
+	close(fd);
+
+	return 0;
+}
+
 
 int read_partition_table(char **parts)
 {
@@ -290,6 +338,7 @@ typedef enum {
 	ERASE_PART,
 	WRITE_PART,
 	RESET,
+	FULLFW,
 } user_cmd_t;
 
 int main(int argc, char *argv[])
@@ -318,6 +367,12 @@ int main(int argc, char *argv[])
 		part_name = argv[2];
 		if (!strcmp(argv[1], "erase")) {
 			user_cmd = ERASE_PART;
+		}
+		if (!strcmp(argv[1], "fullfw")) {
+			user_cmd = FULLFW;
+			file_name = argv[2];
+			fullfw(file_name);
+			exit(0);
 		}
 		else {
 			show_help();
