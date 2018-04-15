@@ -280,6 +280,7 @@ void show_help(void)
 	printf("\tread [partition name] [output file] - read partition to file\n");
 	printf("\terase [partition name]              - erase partition\n");
 	printf("\twrite [partition name] [input file] - write partition from file\n");
+	printf("\treset                               - reboot machine\n");
 }
 
 typedef enum {
@@ -288,6 +289,7 @@ typedef enum {
 	READ_PART,
 	ERASE_PART,
 	WRITE_PART,
+	RESET,
 } user_cmd_t;
 
 int main(int argc, char *argv[])
@@ -303,6 +305,9 @@ int main(int argc, char *argv[])
 		}
 		else if (!strcmp(argv[1], "get_ver")) {
 			user_cmd = GET_VER;
+		}
+		else if (!strcmp(argv[1], "reset")) {
+			user_cmd = RESET;
 		}
 		else {
 			show_help();
@@ -440,6 +445,11 @@ int main(int argc, char *argv[])
 				printf("DONE\n");
 			else
 				printf("failed\n");
+		break;
+		case RESET:
+			//есть возможность загрузить в нужный режим
+			//если послать в первом байте номер режима
+			send_cmd_only(NORMAL_RESET);
 		break;
 		default:
 			printf("unknown user cmd: %d\n", user_cmd);
