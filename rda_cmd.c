@@ -181,6 +181,7 @@ int read_partition(char *name, char *out_file)
 	buf = malloc(buf_size);
 
 	u64 total_rcv = 0;
+	u64 last_ff = 0;
 
 	int fd = open(out_file, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
 
@@ -209,9 +210,18 @@ int read_partition(char *name, char *out_file)
 			printf("[%s] download error\n", __func__);
 			return -1;
 		}
+		int i;
+		for (i = (buf_size - 1); i >= 0; i--)
+			if ((unsigned char)buf[i] != 0xff) {
+				last_ff = total_rcv + i;
+				break;
+			}
+
 		write(fd, buf, buf_size);
 		total_rcv += buf_size;
 	}
+
+	ftruncate(fd, last_ff + 1);
 
 	free(buf);
 	close(fd);
@@ -483,6 +493,7 @@ int main(int argc, char *argv[])
 
 				upload_buf(&buf, part_info->part, 0, UPLOAD_CHUNK_SIZE);
 			}
+			send_cmd_only(NORMAL_RESET);
 		break;
 		default:
 			printf("unknown user cmd: %d\n", user_cmd);
