@@ -102,6 +102,7 @@ int send_cmd(struct command_header *cmd_hdr, buf_t *to_dev, buf_t *from_dev)
 	u32 flowid = pkt_hdr->flowid;
 	u32 rsp = le32toh(*(int *)(rcv_buf + sizeof(struct packet_header)));
 
+	// может возвращаться короткий ответ: "ae 04 00 00", что равно ACK
 	if (flowid == FLOWID_ACK && rsp == ACK)
 		return 0;
 

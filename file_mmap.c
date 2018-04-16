@@ -41,5 +41,5 @@ void close_file(mmap_file_t *file)
 
 	munmap(file->buf.data, file->buf.size);
 	close(file->fd);
-	free(file->buf.data);
+	free(file);
 }

@@ -25,8 +25,9 @@
 #define PDL1_ADDR 0x00100100 //spl-uboot start addr
 #define PDL2_ADDR 0x80008000 
 
-#define UPLOAD_CHUNK_SIZE_PDL1 (4 * 1024)
-#define UPLOAD_CHUNK_SIZE_PDL2 (256 * 1024)
+#define UPLOAD_CHUNK_SIZE_PDL (4 * 1024)
+
+#define UPLOAD_CHUNK_SIZE (256 * 1024)
 
 int upload_buf(buf_t *buf, char *part_name, u32 data_addr, u32 chunk_size)
 {
@@ -34,6 +35,15 @@ int upload_buf(buf_t *buf, char *part_name, u32 data_addr, u32 chunk_size)
 
 	if (!buf)
 		return -1;
+
+	printf("uploading %s, size: %u bytes - %3u%% ", part_name ? part_name : "", buf->size, 0);
+	fflush(stdout);
+
+	float f_buf_size = buf->size;
+	float f_chunk_size = chunk_size;
+
+	float persent_chunk = 100 / (f_buf_size / f_chunk_size);
+	float cur_persent = 0;
 
 	struct command_header cmd_hdr;
 	buf_t to_dev;
@@ -73,6 +83,10 @@ int upload_buf(buf_t *buf, char *part_name, u32 data_addr, u32 chunk_size)
 			return -1;
 
 		total_send += chunk_buf.size;
+
+		cur_persent += persent_chunk;
+		printf("\b\b\b\b\b%3u%% ", (int)cur_persent < 100 ? (int)cur_persent : 100);
+		fflush(stdout);
 	}
 
 	u32 crc = htole32(crc32(0, buf->data, buf->size));
@@ -84,55 +98,27 @@ int upload_buf(buf_t *buf, char *part_name, u32 data_addr, u32 chunk_size)
 	if (ret)
 		return -1;
 
+	printf("\b\b\b\b\b100%% DONE\n");
 	return 0;
 }
 
-int upload_file(char *path, char *part_name, u32 data_addr, u32 chunk_size)
+int get_pdl_version(char **ver)
 {
-	mmap_file_t *file = load_file(path);
+	u8 buffer[PDL_MAX_DATA_SIZE];
+	buf_t from_dev;
 
-	if (!file)
-		return -1;
+	from_dev.data = buffer;
+	from_dev.size = sizeof(buffer);
 
-	int ret = upload_buf(&(file->buf), part_name, data_addr, chunk_size);
-	if (ret)
-		ret = -1;
-
-	close_file(file);
-
-	return ret;
-}
-
-int fullfw(char *path)
-{
-	mmap_file_t *file = load_file(path);
-
-	if (!file)
-		return -1;
-
-	uint32_t parts_cnt = *(uint32_t *)(file->buf.data);
-	printf("parts count: %d\n", parts_cnt);
-
-	part_info_t *ptr = (part_info_t *)(file->buf.data + sizeof(uint32_t));
-	int i;
-	for (i = 0; i < parts_cnt; i++) {
-		printf("=================\n");
-		printf("offset: 0x%08x\n", ptr->offset);
-		printf("size: 0x%08x\n", ptr->size);
-		printf("unknown1: 0x%08x\n", ptr->unknown1);
-		printf("loadaddr: 0x%08x\n", ptr->loadaddr);
-		printf("name: %s\n", ptr->name);
-		printf("part: %s\n", ptr->part);
-		printf("path: %s\n", ptr->path);
-		printf("unknown3: 0x%08x\n", ptr->unknown3);
-		printf("unknown4: 0x%08x\n", ptr->unknown4);
-		hex_dump(file->buf.data + sizeof(uint32_t) + parts_cnt * sizeof(part_info_t) + ptr->offset, 128);
-		ptr++;
+	int ret = send_cmd_data_from_dev(GET_VERSION, &from_dev);
+	if (!ret) {
+		if (ver) {
+			*ver = malloc(from_dev.size);
+			memcpy(*ver, from_dev.data, from_dev.size);
+		}
 	}
 
-	close_file(file);
-
-	return 0;
+	return ret;
 }
 
 int read_partition_table(char **parts)
@@ -243,30 +229,6 @@ int erase_partition(char *name)
 	return send_cmd_data_to_dev(ERASE_PARTITION, &to_dev);
 }
 
-int write_partition(char *name, char *in_file)
-{
-	return upload_file(in_file, name, 0, UPLOAD_CHUNK_SIZE_PDL2);
-}
-
-int get_pdl_version(char **ver)
-{
-	u8 buffer[PDL_MAX_DATA_SIZE];
-	buf_t from_dev;
-
-	from_dev.data = buffer;
-	from_dev.size = sizeof(buffer);
-
-	int ret = send_cmd_data_from_dev(GET_VERSION, &from_dev);
-	if (!ret) {
-		if (ver) {
-			*ver = malloc(from_dev.size);
-			memcpy(*ver, from_dev.data, from_dev.size);
-		}
-	}
-
-	return ret;
-}
-
 int set_pdl_dbg(u32 dbg)
 {
 	return send_cmd_hdr(SET_PDL_DBG, dbg, 0);
@@ -292,16 +254,18 @@ int get_pdl_log(void)
 
 void show_help(void)
 {
-	printf("\tget_parts                           - read partition table\n");
-	printf("\tget_ver                             - read PDL version\n");
+	printf("\tparts                               - read partition table\n");
+	printf("\tver                                 - read PDL version\n");
 	printf("\tread [partition name] [output file] - read partition to file\n");
 	printf("\terase [partition name]              - erase partition\n");
 	printf("\twrite [partition name] [input file] - write partition from file\n");
 	printf("\treset                               - reboot machine\n");
+	printf("\tfullfw [input file]                 - write all partitions from original fw\n");
 }
 
 typedef enum {
-	GET_PARTS,
+	DO_NOTHING = 0,
+	GET_PARTS = 1,
 	GET_VER,
 	READ_PART,
 	ERASE_PART,
@@ -316,12 +280,14 @@ int main(int argc, char *argv[])
 	char *buf_ptr;
 	char *part_name = NULL;
 	char *file_name = NULL;
+	mmap_file_t *file = NULL;
+	part_info_t *part_info = NULL;
 
 	if (argc == 2) {
-		if (!strcmp(argv[1], "get_parts")) {
+		if (!strcmp(argv[1], "parts")) {
 			user_cmd = GET_PARTS;
 		}
-		else if (!strcmp(argv[1], "get_ver")) {
+		else if (!strcmp(argv[1], "ver")) {
 			user_cmd = GET_VER;
 		}
 		else if (!strcmp(argv[1], "reset")) {
@@ -337,11 +303,9 @@ int main(int argc, char *argv[])
 		if (!strcmp(argv[1], "erase")) {
 			user_cmd = ERASE_PART;
 		}
-		if (!strcmp(argv[1], "fullfw")) {
+		else if (!strcmp(argv[1], "fullfw")) {
 			user_cmd = FULLFW;
 			file_name = argv[2];
-			fullfw(file_name);
-			exit(0);
 		}
 		else {
 			show_help();
@@ -378,6 +342,9 @@ int main(int argc, char *argv[])
 		return -1;
 	}
 
+	if ((user_cmd == WRITE_PART || user_cmd == FULLFW) && file_name)
+		file = load_file(file_name);
+
 	int tty_timeout = get_tty_timeout();
 	if (tty_timeout != -1)
 		set_tty_timeout(1); // т.к перввый вызов get_pdl_version() может не вернуть результаов так как в BootRom нет такой команды
@@ -387,13 +354,45 @@ int main(int argc, char *argv[])
 	if (tty_timeout != -1)
 		set_tty_timeout(tty_timeout); //возвращаем обратно
 
-
 	if (ret) {
+
+		u32 pdl1_addr = PDL1_ADDR;
+		u32 pdl2_addr = PDL2_ADDR;
+
+		mmap_file_t *pdl1_file = load_file(PDL1_PATH);
+		mmap_file_t *pdl2_file = load_file(PDL2_PATH);
+
+		//???? проверка, что файлы открылись
+
+		buf_t pdl1_buf;
+		buf_t pdl2_buf;
+
+		memcpy(&pdl1_buf, &pdl1_file->buf, sizeof(buf_t));
+		memcpy(&pdl2_buf, &pdl2_file->buf, sizeof(buf_t));
+
+		if (user_cmd == FULLFW) {
+			part_info = fullfw_find_part(file, "pdl1");
+			if (part_info) {
+				pdl1_addr = part_info->loadaddr;
+				pdl1_buf.data = get_part_ptr(file, part_info);
+				pdl1_buf.size = part_info->size;
+
+				printf("pdl1 from fullfw\n");
+			}
+			part_info = fullfw_find_part(file, "pdl2");
+			if (part_info) {
+				pdl2_addr = part_info->loadaddr;
+				pdl2_buf.data = get_part_ptr(file, part_info);
+				pdl2_buf.size = part_info->size;
+
+				printf("pdl2 from fullfw\n");
+			}
+		}
+
 		//exec pdl1
-		printf("uploading pdl1\n");
-		if (upload_file(PDL1_PATH, NULL, PDL1_ADDR, UPLOAD_CHUNK_SIZE_PDL1)) {
+		if (upload_buf(&pdl1_buf, "pdl1", pdl1_addr, UPLOAD_CHUNK_SIZE_PDL)) {
 			printf("upload pdl1 failed\n");
-			return -1;
+			return -1; //???? clear
 		}
 		send_cmd_only(EXEC_DATA); //не возвращает статус
 
@@ -402,12 +401,14 @@ int main(int argc, char *argv[])
 		send_cmd_only(CONNECT);
 
 		//exec pdl2
-		printf("uploading pdl2\n");
-		if (upload_file(PDL2_PATH, NULL, PDL2_ADDR, UPLOAD_CHUNK_SIZE_PDL1)) {
+		if (upload_buf(&pdl2_buf, "pdl2", pdl2_addr, UPLOAD_CHUNK_SIZE_PDL)) {
 			printf("upload pdl2 failed\n");
-			return -1;
+			return -1; // ???? clear
 		}
 		send_cmd_only(EXEC_DATA); //не возвращает статус
+
+		close_file(pdl1_file);
+		close_file(pdl2_file);
 
 		sleep(2);
 
@@ -464,20 +465,30 @@ int main(int argc, char *argv[])
 				printf("failed\n");
 		break;
 		case WRITE_PART:
-			printf("write [%s] partition ", part_name);
-			if (!write_partition(part_name, file_name))
-				printf("DONE\n");
-			else
-				printf("failed\n");
+			upload_buf(&(file->buf), part_name, 0, UPLOAD_CHUNK_SIZE);
 		break;
 		case RESET:
 			//есть возможность загрузить в нужный режим
 			//если послать в первом байте номер режима
 			send_cmd_only(NORMAL_RESET);
 		break;
+		case FULLFW:
+			part_foreach(part_info, file) {
+				if (strncmp(part_info->part, "pdl", 3) == 0)
+					continue;
+
+				buf_t buf;
+				buf.data = get_part_ptr(file, part_info);
+				buf.size = part_info->size;
+
+				upload_buf(&buf, part_info->part, 0, UPLOAD_CHUNK_SIZE);
+			}
+		break;
 		default:
 			printf("unknown user cmd: %d\n", user_cmd);
 	}
+
+	close_file(file);
 
 	close_tty();
 	return 0;
