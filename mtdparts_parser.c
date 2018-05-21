@@ -6,6 +6,8 @@
 #include "mtdparts_parser.h"
 #include "list.h"
 
+#define FLASH_SIZE (512 * 1024 * 1024)
+
 #define SIZE_REMAINING		(u64)(-1)
 #define OFFSET_NOT_SPECIFIED	(u64)(-1)
 
@@ -266,6 +268,16 @@ int parse_mtdparts(const char *const mtdparts)
 				//MTD_DEV_TYPE(id->type), id->num, id->mtd_id);
 		printf("no partitions\n");
 		return 1;
+	}
+
+	int total_size = 0;
+	list_for_each(entry, &parts) {
+		part = list_entry(entry, struct part_info, link);
+
+		if (list_is_last(entry, &parts) && part->size == SIZE_REMAINING)
+			part->size = FLASH_SIZE - total_size;
+		else
+			total_size += part->size;
 	}
 
 	debug("\ntotal partitions: %d\n", num_parts);
