@@ -5,7 +5,7 @@
 
 #include "fullfw.h"
 
-typedef struct 
+typedef struct
 {
 	char *name;
 	char *file;
@@ -17,10 +17,10 @@ part_t *parts = NULL;
 void free_parts(void)
 {
 	int i;
-	
+
 	if (!parts)
 		return;
-	
+
 	for (i = 0; i < part_cnt; i++) {
 		if (parts[i].name)
 			free(parts[i].name);
@@ -29,12 +29,11 @@ void free_parts(void)
 	}
 	free(parts);
 	parts = NULL;
+	part_cnt = 0;
 }
 
-int main(int argc, char *argv[])
+int create_parts_arr(int argc, char *argv[])
 {
-	int ret = -1;
-
 	int i;
 	for (i = 1; i < argc; i++) {
 		char *one_arg = strdup(argv[i]);
@@ -52,7 +51,7 @@ int main(int argc, char *argv[])
 				free(one_arg);
 				goto err;
 			}
-			
+
 			if (access(file, F_OK) != 0) {
 				printf("%s - file do not exist\n", file);
 				free(one_arg);
@@ -83,11 +82,44 @@ int main(int argc, char *argv[])
 		free(one_arg);
 	}
 
-	for (i = 0; i < part_cnt; i++)
-		printf("%s - %s\n", parts[i].name, parts[i].file);
+	return 0;
 
-	ret = 0;
 err:
 	free_parts();
-	return ret;
+	return -1;
+}
+
+
+void usage(void)
+{
+	printf("\t-p part_name1:part_file1 ... part_nameN:part_fileN - pack image\n");
+	printf("\t-u fullfw_file - unpack image\n");
+}
+
+int main(int argc, char *argv[])
+{
+	if (argc > 1) {
+		if (strcmp(argv[1], "-p") == 0) {
+			if (create_parts_arr(argc, argv))
+				return -1;
+
+			int i;
+			for (i = 0; i < part_cnt; i++)
+				printf("%s - %s\n", parts[i].name, parts[i].file);
+
+			free_parts();
+		}
+		else if (strcmp(argv[1], "-u") == 0) {
+		}
+		else {
+			usage();
+			return 0;
+		}
+	}
+	else {
+		usage();
+		return 0;
+	}
+
+	return 0;
 }
