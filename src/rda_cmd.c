@@ -286,6 +286,7 @@ typedef enum {
 
 int main(int argc, char *argv[])
 {
+	int i;
 	user_cmd_t user_cmd;
 	char *buf_ptr;
 	char *part_name = NULL;
@@ -483,15 +484,16 @@ int main(int argc, char *argv[])
 			send_cmd_only(NORMAL_RESET);
 		break;
 		case FULLFW:
-			part_foreach(part_info, file) {
-				if (strncmp(part_info->part, "pdl", 3) == 0)
+			part_info = PARTS_INFO_BASE(file);
+			for (i = 0; i < PART_CNT(file); i++) {
+				if (strncmp(part_info[i].part, "pdl", 3) == 0)
 					continue;
 
 				buf_t buf;
-				buf.data = get_part_ptr(file, part_info);
-				buf.size = part_info->size;
+				buf.data = PARTS_DATA_BASE(file) + part_info[i].offset;
+				buf.size = part_info[i].size;
 
-				upload_buf(&buf, part_info->part, 0, UPLOAD_CHUNK_SIZE);
+				upload_buf(&buf, part_info[i].part, 0, UPLOAD_CHUNK_SIZE);
 			}
 			send_cmd_only(NORMAL_RESET);
 		break;

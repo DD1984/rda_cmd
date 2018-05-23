@@ -17,10 +17,9 @@ typedef struct {
 	uint32_t unknown4;
 } part_info_t;
 
-#define part_foreach(ptr, file) \
-	for (ptr = (part_info_t *)(file->buf.data + sizeof(uint32_t)); \
-		ptr < (part_info_t *)(file->buf.data + sizeof(uint32_t) + *(uint32_t *)(file->buf.data) * sizeof(part_info_t)); \
-		ptr++)
+#define PART_CNT(file) (*(uint32_t *)file->buf.data)
+#define PARTS_INFO_BASE(file) ((part_info_t *)(file->buf.data + sizeof(uint32_t)))
+#define PARTS_DATA_BASE(file) (file->buf.data + 4 + PART_CNT(file) * sizeof(part_info_t))
 
 part_info_t *fullfw_find_part(mmap_file_t *file, char *part);
 char *get_part_ptr(mmap_file_t *file, part_info_t *part_info);

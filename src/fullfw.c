@@ -18,12 +18,14 @@ void prn_part_info(part_info_t *ptr)
 
 part_info_t *fullfw_find_part(mmap_file_t *file, char *part)
 {
+	int i;
+
 	if (!file)
 		return NULL;
 
-	part_info_t *ptr = NULL;
-	part_foreach(ptr, file) {
-		if (strcmp(part, ptr->part) == 0)
+	part_info_t *ptr = PARTS_INFO_BASE(file);
+	for (i = 0; i < PART_CNT(file); i++) {
+		if (strcmp(part, ptr[i].part) == 0)
 			return ptr;
 	}
 	return NULL;

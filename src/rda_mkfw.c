@@ -9,14 +9,10 @@
 #include "fullfw.h"
 #include "file_mmap.h"
 
-typedef struct
-{
-	char *name;
-	char *file;
-} part_t;
+#define FULLFW_NAME "fullfw.img"
 
 int part_cnt = 0;
-part_t *parts = NULL;
+part_info_t *parts = NULL;
 
 void free_parts(void)
 {
@@ -25,12 +21,6 @@ void free_parts(void)
 	if (!parts)
 		return;
 
-	for (i = 0; i < part_cnt; i++) {
-		if (parts[i].name)
-			free(parts[i].name);
-		if( parts[i].file)
-			free(parts[i].file);
-	}
 	free(parts);
 	parts = NULL;
 	part_cnt = 0;
@@ -64,19 +54,22 @@ int create_parts_arr(int argc, char *argv[])
 
 			part_cnt++;
 
-			part_t *tmp_parts = realloc(parts, sizeof(part_t) * part_cnt);
+			part_info_t *tmp_parts = realloc(parts, sizeof(part_info_t) * part_cnt);
 			if (tmp_parts) {
 				parts = tmp_parts;
-				parts[part_cnt -1].name = malloc(strlen(name) + 1);
-				if (parts[part_cnt -1].name)
-					strcpy(parts[part_cnt - 1].name, name);
 
-				parts[part_cnt -1].file = malloc(strlen(file) + 1);
-				if (parts[part_cnt -1].file)
-					strcpy(parts[part_cnt - 1].file, file);
+				memset(&parts[part_cnt - 1], 0, sizeof(part_info_t));
+
+				strcpy(parts[part_cnt - 1].name, name);
+				strcpy(parts[part_cnt - 1].part, name);
+				realpath(file, parts[part_cnt - 1].path);
+
+				struct stat stat_buf;
+				stat(file, &stat_buf);
+
+				parts[part_cnt - 1].size = stat_buf.st_size;
 			}
-
-			if (!tmp_parts || !parts[part_cnt - 1].name || !parts[part_cnt - 1].file) {
+			else {
 				printf("%[%d] - can not allocate memory\n");
 				free(one_arg);
 				goto err;
@@ -93,7 +86,6 @@ err:
 	return -1;
 }
 
-
 void usage(void)
 {
 	printf("\t-p part_name1:part_file1 ... part_nameN:part_fileN - pack image\n");
@@ -103,16 +95,19 @@ void usage(void)
 
 int show_img_info(char *file_name)
 {
+	int i;
 	mmap_file_t *file = NULL;
-	part_info_t *part_info = NULL;
+	part_info_t *parts;
 
 	file = load_file(file_name);
 	if (!file)
 		return -1;
 
+	parts = PARTS_INFO_BASE(file);
+
 	printf("=======================\n");
-	part_foreach(part_info, file) {
-		prn_part_info(part_info);
+	for (i = 0; i < PART_CNT(file); i++) {
+		prn_part_info(&parts[i]);
 		printf("=======================\n");
 	}
 
@@ -123,33 +118,37 @@ int show_img_info(char *file_name)
 
 int unpack_img(char *file_name)
 {
+	int i;
 	mmap_file_t *file = NULL;
-	part_info_t *part_info = NULL;
+	part_info_t *parts;
 
 	file = load_file(file_name);
 	if (!file)
 		return -1;
 
-	part_foreach(part_info, file) {
-		if (!access(part_info->part, F_OK))
-			if (unlink(part_info->part)) {
-				printf("can't delete old file: %s\n", part_info->part);
+	parts = PARTS_INFO_BASE(file);
+
+	for (i = 0; i < PART_CNT(file); i++) {
+		if (!access(parts[i].part, F_OK))
+			if (unlink(parts[i].part)) {
+				printf("can't delete old file: %s\n", parts[i].part);
 				continue;
 			}
 
-		int fd = open(part_info->part, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
+		int fd = open(parts[i].part, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
 		if ( fd < 0) {
-			printf("can't create new file: %s\n", part_info->part);
+			printf("can't create new file: %s\n", parts[i].part);
 			continue;
 		}
 
 		int total_cnt = 0;
-		char *ptr = get_part_ptr(file, part_info);
 
-		while (total_cnt < part_info->size) {
-			int write_cnt = write(fd, ptr + total_cnt, part_info->size - total_cnt);
+		char *ptr = PARTS_DATA_BASE(file) + parts[i].offset;
+
+		while (total_cnt < parts[i].size) {
+			int write_cnt = write(fd, ptr + total_cnt, parts[i].size - total_cnt);
 			if (write_cnt < 0) {
-				printf("write to file: %s failed\n", part_info->part);
+				printf("write to file: %s failed\n", parts[i].part);
 				break;
 			}
 			total_cnt += write_cnt;
@@ -162,7 +161,6 @@ int unpack_img(char *file_name)
 	return 0;
 }
 
-
 int main(int argc, char *argv[])
 {
 	if (argc > 1) {
@@ -172,7 +170,7 @@ int main(int argc, char *argv[])
 
 			int i;
 			for (i = 0; i < part_cnt; i++)
-				printf("%s - %s\n", parts[i].name, parts[i].file);
+				printf("%s - %s\n", parts[i].part, parts[i].path);
 
 			free_parts();
 		}
