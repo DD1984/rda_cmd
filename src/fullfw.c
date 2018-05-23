@@ -16,13 +16,13 @@ void prn_part_info(part_info_t *ptr)
 	printf("unknown4: 0x%08x\n", ptr->unknown4);
 }
 
-int fullfw_find_part(parts_hdr_t *hdr, char *part)
+part_info_t *fullfw_find_part(parts_hdr_t *hdr, char *part)
 {
-	int i;
+	part_info_t *part_info;
 
-	for (i = 0; i < hdr->part_cnt; i++) {
-		if (strcmp(part, hdr->parts[i].part) == 0)
-			return i;
+	part_foreach(hdr, part_info) {
+		if (strcmp(part, part_info->part) == 0)
+			return part_info;
 	}
-	return -1;
+	return NULL;
 }

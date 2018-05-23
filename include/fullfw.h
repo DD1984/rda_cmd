@@ -26,7 +26,11 @@ typedef struct {
 
 #define PARTS_DATA_BASE(hdr) ((char *)hdr + offsetof(parts_hdr_t, parts) + hdr->part_cnt * sizeof(part_info_t))
 
-int fullfw_find_part(parts_hdr_t *hdr, char *part);
+#define part_foreach(parts_hdr, part_info) \
+       for (part_info = &parts_hdr->parts[0]; part_info < &parts_hdr->parts[parts_hdr->part_cnt]; part_info++)
+
+
+part_info_t *fullfw_find_part(parts_hdr_t *hdr, char *part);
 
 void prn_part_info(part_info_t *ptr);
 

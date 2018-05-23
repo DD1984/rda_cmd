@@ -18,12 +18,8 @@
 #include "crc32.h"
 #include "fullfw.h"
 #include "file_mmap.h"
+#include "pdls.h"
 
-#define PDL1_PATH "pdl1.bin"
-#define PDL2_PATH "pdl2.bin"
-
-#define PDL1_ADDR 0x00100100 //spl-uboot start addr
-#define PDL2_ADDR 0x80008000 
 
 #define UPLOAD_CHUNK_SIZE_PDL (4 * 1024)
 
@@ -286,13 +282,13 @@ typedef enum {
 
 int main(int argc, char *argv[])
 {
-	int i;
 	user_cmd_t user_cmd;
 	char *buf_ptr;
 	char *part_name = NULL;
 	char *file_name = NULL;
 	mmap_file_t *file = NULL;
 	parts_hdr_t *parts_hdr;
+	part_info_t *part_info;
 
 	if (argc == 2) {
 		if (!strcmp(argv[1], "parts")) {
@@ -386,19 +382,19 @@ int main(int argc, char *argv[])
 		memcpy(&pdl2_buf, &pdl2_file->buf, sizeof(buf_t));
 
 		if (user_cmd == FULLFW) {
-			int num = fullfw_find_part(parts_hdr, "pdl1");
-			if (num >= 0) {
-				pdl1_addr = parts_hdr->parts[num].loadaddr;
-				pdl1_buf.data = PARTS_DATA_BASE(parts_hdr) + parts_hdr->parts[num].offset;
-				pdl1_buf.size = parts_hdr->parts[num].size;
+			part_info = fullfw_find_part(parts_hdr, "pdl1");
+			if (part_info) {
+				pdl1_addr = part_info->loadaddr;
+				pdl1_buf.data = PARTS_DATA_BASE(parts_hdr) + part_info->offset;
+				pdl1_buf.size = part_info->size;
 
 				printf("pdl1 from fullfw\n");
 			}
-			num = fullfw_find_part(parts_hdr, "pdl2");
-			if (num >= 0) {
-				pdl2_addr = parts_hdr->parts[num].loadaddr;
-				pdl2_buf.data = PARTS_DATA_BASE(parts_hdr) + parts_hdr->parts[num].offset;
-				pdl2_buf.size = parts_hdr->parts[num].size;
+			part_info = fullfw_find_part(parts_hdr, "pdl2");
+			if (part_info) {
+				pdl2_addr = part_info->loadaddr;
+				pdl2_buf.data = PARTS_DATA_BASE(parts_hdr) + part_info->offset;
+				pdl2_buf.size = part_info->size;
 
 				printf("pdl2 from fullfw\n");
 			}
@@ -488,15 +484,15 @@ int main(int argc, char *argv[])
 			send_cmd_only(NORMAL_RESET);
 		break;
 		case FULLFW:
-			for (i = 0; i < parts_hdr->part_cnt; i++) {
-				if (strncmp(parts_hdr->parts[i].part, "pdl", 3) == 0)
+			part_foreach(parts_hdr, part_info) {
+				if (strncmp(part_info->part, "pdl", 3) == 0)
 					continue;
 
 				buf_t buf;
-				buf.data = PARTS_DATA_BASE(parts_hdr) + parts_hdr->parts[i].offset;
-				buf.size = parts_hdr->parts[i].size;
+				buf.data = PARTS_DATA_BASE(parts_hdr) + part_info->offset;
+				buf.size = part_info->size;
 
-				upload_buf(&buf, parts_hdr->parts[i].part, 0, UPLOAD_CHUNK_SIZE);
+				upload_buf(&buf, part_info->part, 0, UPLOAD_CHUNK_SIZE);
 			}
 			send_cmd_only(NORMAL_RESET);
 		break;
