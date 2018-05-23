@@ -2,6 +2,7 @@
 #define __FULLFW_H__
 
 #include <stdint.h>
+#include <stddef.h>
 
 #include "file_mmap.h"
 
@@ -17,11 +18,15 @@ typedef struct {
 	uint32_t unknown4;
 } part_info_t;
 
-#define PART_CNT(file) (*(uint32_t *)file->buf.data)
-#define PARTS_INFO_BASE(file) ((part_info_t *)(file->buf.data + sizeof(uint32_t)))
-#define PARTS_DATA_BASE(file) (file->buf.data + 4 + PART_CNT(file) * sizeof(part_info_t))
+typedef struct {
+	uint32_t part_cnt;
+	part_info_t parts[];
+} parts_hdr_t;
 
-part_info_t *fullfw_find_part(mmap_file_t *file, char *part);
+
+#define PARTS_DATA_BASE(hdr) ((char *)hdr + offsetof(parts_hdr_t, parts) + hdr->part_cnt * sizeof(part_info_t))
+
+int fullfw_find_part(parts_hdr_t *hdr, char *part);
 
 void prn_part_info(part_info_t *ptr);
 

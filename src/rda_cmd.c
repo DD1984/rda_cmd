@@ -292,7 +292,7 @@ int main(int argc, char *argv[])
 	char *part_name = NULL;
 	char *file_name = NULL;
 	mmap_file_t *file = NULL;
-	part_info_t *part_info = NULL;
+	parts_hdr_t *parts_hdr;
 
 	if (argc == 2) {
 		if (!strcmp(argv[1], "parts")) {
@@ -353,8 +353,12 @@ int main(int argc, char *argv[])
 		return -1;
 	}
 
-	if ((user_cmd == WRITE_PART || user_cmd == FULLFW) && file_name)
+	if ((user_cmd == WRITE_PART || user_cmd == FULLFW) && file_name) {
 		file = load_file(file_name);
+
+		if (user_cmd == FULLFW)
+			parts_hdr = (parts_hdr_t *)file->buf.data;
+	}
 
 	int tty_timeout = get_tty_timeout();
 	if (tty_timeout != -1)
@@ -382,19 +386,19 @@ int main(int argc, char *argv[])
 		memcpy(&pdl2_buf, &pdl2_file->buf, sizeof(buf_t));
 
 		if (user_cmd == FULLFW) {
-			part_info = fullfw_find_part(file, "pdl1");
-			if (part_info) {
-				pdl1_addr = part_info->loadaddr;
-				pdl1_buf.data = PARTS_DATA_BASE(file) + part_info->offset;
-				pdl1_buf.size = part_info->size;
+			int num = fullfw_find_part(parts_hdr, "pdl1");
+			if (num >= 0) {
+				pdl1_addr = parts_hdr->parts[num].loadaddr;
+				pdl1_buf.data = PARTS_DATA_BASE(parts_hdr) + parts_hdr->parts[num].offset;
+				pdl1_buf.size = parts_hdr->parts[num].size;
 
 				printf("pdl1 from fullfw\n");
 			}
-			part_info = fullfw_find_part(file, "pdl2");
-			if (part_info) {
-				pdl2_addr = part_info->loadaddr;
-				pdl2_buf.data = PARTS_DATA_BASE(file) + part_info->offset;
-				pdl2_buf.size = part_info->size;
+			num = fullfw_find_part(parts_hdr, "pdl2");
+			if (num >= 0) {
+				pdl2_addr = parts_hdr->parts[num].loadaddr;
+				pdl2_buf.data = PARTS_DATA_BASE(parts_hdr) + parts_hdr->parts[num].offset;
+				pdl2_buf.size = parts_hdr->parts[num].size;
 
 				printf("pdl2 from fullfw\n");
 			}
@@ -484,16 +488,15 @@ int main(int argc, char *argv[])
 			send_cmd_only(NORMAL_RESET);
 		break;
 		case FULLFW:
-			part_info = PARTS_INFO_BASE(file);
-			for (i = 0; i < PART_CNT(file); i++) {
-				if (strncmp(part_info[i].part, "pdl", 3) == 0)
+			for (i = 0; i < parts_hdr->part_cnt; i++) {
+				if (strncmp(parts_hdr->parts[i].part, "pdl", 3) == 0)
 					continue;
 
 				buf_t buf;
-				buf.data = PARTS_DATA_BASE(file) + part_info[i].offset;
-				buf.size = part_info[i].size;
+				buf.data = PARTS_DATA_BASE(parts_hdr) + parts_hdr->parts[i].offset;
+				buf.size = parts_hdr->parts[i].size;
 
-				upload_buf(&buf, part_info[i].part, 0, UPLOAD_CHUNK_SIZE);
+				upload_buf(&buf, parts_hdr->parts[i].part, 0, UPLOAD_CHUNK_SIZE);
 			}
 			send_cmd_only(NORMAL_RESET);
 		break;
