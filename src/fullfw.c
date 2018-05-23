@@ -30,12 +30,3 @@ part_info_t *fullfw_find_part(mmap_file_t *file, char *part)
 	}
 	return NULL;
 }
-
-char *get_part_ptr(mmap_file_t *file, part_info_t *part_info)
-{
-	if (!file || !part_info)
-		return NULL;
-	uint32_t parts_cnt = *(uint32_t *)(file->buf.data);
-	return file->buf.data + sizeof(uint32_t) + parts_cnt * sizeof(part_info_t) + part_info->offset;
-}
-

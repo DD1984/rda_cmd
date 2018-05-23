@@ -385,7 +385,7 @@ int main(int argc, char *argv[])
 			part_info = fullfw_find_part(file, "pdl1");
 			if (part_info) {
 				pdl1_addr = part_info->loadaddr;
-				pdl1_buf.data = get_part_ptr(file, part_info);
+				pdl1_buf.data = PARTS_DATA_BASE(file) + part_info->offset;
 				pdl1_buf.size = part_info->size;
 
 				printf("pdl1 from fullfw\n");
@@ -393,7 +393,7 @@ int main(int argc, char *argv[])
 			part_info = fullfw_find_part(file, "pdl2");
 			if (part_info) {
 				pdl2_addr = part_info->loadaddr;
-				pdl2_buf.data = get_part_ptr(file, part_info);
+				pdl2_buf.data = PARTS_DATA_BASE(file) + part_info->offset;
 				pdl2_buf.size = part_info->size;
 
 				printf("pdl2 from fullfw\n");
