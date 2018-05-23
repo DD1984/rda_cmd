@@ -6,7 +6,7 @@ LDFLAGS =
 SRC_DIR = src
 
 RDA_CMD_C_SOURCES = rda_cmd.c tty.c protocol.c packet.c dump.c mtdparts_parser.c crc32.c file_mmap.c fullfw.c
-RDA_MKFW_C_SOURCES = rda_mkfw.c dump.c fullfw.c
+RDA_MKFW_C_SOURCES = rda_mkfw.c file_mmap.c dump.c fullfw.c
 
 RDA_CMD_OBJECTS_DIR = rda_cmd_obj
 RDA_MKFW_OBJECTS_DIR = rda_mkfw_obj

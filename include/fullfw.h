@@ -25,4 +25,6 @@ typedef struct {
 part_info_t *fullfw_find_part(mmap_file_t *file, char *part);
 char *get_part_ptr(mmap_file_t *file, part_info_t *part_info);
 
+void prn_part_info(part_info_t *ptr);
+
 #endif

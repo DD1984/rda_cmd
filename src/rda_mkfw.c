@@ -4,6 +4,7 @@
 #include <stdlib.h>
 
 #include "fullfw.h"
+#include "file_mmap.h"
 
 typedef struct
 {
@@ -94,6 +95,7 @@ void usage(void)
 {
 	printf("\t-p part_name1:part_file1 ... part_nameN:part_fileN - pack image\n");
 	printf("\t-u fullfw_file - unpack image\n");
+	printf("\t-s fullfw_file - show image info\n");
 }
 
 int main(int argc, char *argv[])
@@ -110,6 +112,27 @@ int main(int argc, char *argv[])
 			free_parts();
 		}
 		else if (strcmp(argv[1], "-u") == 0) {
+		}
+		else if (strcmp(argv[1], "-s") == 0) {
+			if (argc != 3) {
+				usage();
+				return 0;
+			}
+
+			mmap_file_t *file = NULL;
+			part_info_t *part_info = NULL;
+
+			file = load_file(argv[2]);
+			if (!file)
+				return -1;
+
+			printf("=======================\n");
+			part_foreach(part_info, file) {
+				prn_part_info(part_info);
+				printf("=======================\n");
+			}
+
+			close_file(file);
 		}
 		else {
 			usage();
