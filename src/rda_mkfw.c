@@ -2,6 +2,9 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #include "fullfw.h"
 #include "file_mmap.h"
@@ -98,6 +101,68 @@ void usage(void)
 	printf("\t-s fullfw_file - show image info\n");
 }
 
+int show_img_info(char *file_name)
+{
+	mmap_file_t *file = NULL;
+	part_info_t *part_info = NULL;
+
+	file = load_file(file_name);
+	if (!file)
+		return -1;
+
+	printf("=======================\n");
+	part_foreach(part_info, file) {
+		prn_part_info(part_info);
+		printf("=======================\n");
+	}
+
+	close_file(file);
+
+	return 0;
+}
+
+int unpack_img(char *file_name)
+{
+	mmap_file_t *file = NULL;
+	part_info_t *part_info = NULL;
+
+	file = load_file(file_name);
+	if (!file)
+		return -1;
+
+	part_foreach(part_info, file) {
+		if (!access(part_info->part, F_OK))
+			if (unlink(part_info->part)) {
+				printf("can't delete old file: %s\n", part_info->part);
+				continue;
+			}
+
+		int fd = open(part_info->part, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
+		if ( fd < 0) {
+			printf("can't create new file: %s\n", part_info->part);
+			continue;
+		}
+
+		int total_cnt = 0;
+		char *ptr = get_part_ptr(file, part_info);
+
+		while (total_cnt < part_info->size) {
+			int write_cnt = write(fd, ptr + total_cnt, part_info->size - total_cnt);
+			if (write_cnt < 0) {
+				printf("write to file: %s failed\n", part_info->part);
+				break;
+			}
+			total_cnt += write_cnt;
+		}
+		close(fd);
+	}
+
+	close_file(file);
+
+	return 0;
+}
+
+
 int main(int argc, char *argv[])
 {
 	if (argc > 1) {
@@ -112,27 +177,18 @@ int main(int argc, char *argv[])
 			free_parts();
 		}
 		else if (strcmp(argv[1], "-u") == 0) {
+			if (argc != 3) {
+				usage();
+				return 0;
+			}
+			unpack_img(argv[2]);
 		}
 		else if (strcmp(argv[1], "-s") == 0) {
 			if (argc != 3) {
 				usage();
 				return 0;
 			}
-
-			mmap_file_t *file = NULL;
-			part_info_t *part_info = NULL;
-
-			file = load_file(argv[2]);
-			if (!file)
-				return -1;
-
-			printf("=======================\n");
-			part_foreach(part_info, file) {
-				prn_part_info(part_info);
-				printf("=======================\n");
-			}
-
-			close_file(file);
+			show_img_info(argv[2]);
 		}
 		else {
 			usage();
