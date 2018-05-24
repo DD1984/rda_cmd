@@ -9,10 +9,23 @@
 #include "fullfw.h"
 #include "file_mmap.h"
 #include "pdls.h"
+#include "prog_dir.h"
 
 #define FULLFW_NAME "fullfw.img"
 
-parts_hdr_t *parts_hdr = NULL;
+int write_cont(int fd, char *ptr, int size)
+{
+	int total_cnt = 0;
+	while (total_cnt < size) {
+		int write_cnt = write(fd, ptr + total_cnt, size - total_cnt);
+		if (write_cnt < 0) {
+			printf("%s failed\n", __func__);
+			return -1;
+		}
+		total_cnt += write_cnt;
+	}
+	return 0;
+}
 
 part_info_t *add_part(parts_hdr_t **hdr)
 {
@@ -47,19 +60,16 @@ part_info_t *ins_part(parts_hdr_t **hdr, int num)
 	return NULL;
 }
 
-
-void free_parts(void)
+void free_parts(parts_hdr_t **hdr)
 {
-	int i;
-
-	if (!parts_hdr)
+	if (!*hdr)
 		return;
 
-	free(parts_hdr);
-	parts_hdr = NULL;
+	free(*hdr);
+	*hdr = NULL;
 }
 
-int create_parts_arr(int argc, char *argv[])
+int create_parts_arr(int argc, char *argv[], parts_hdr_t **hdr)
 {
 	int i;
 	for (i = 1; i < argc; i++) {
@@ -85,17 +95,12 @@ int create_parts_arr(int argc, char *argv[])
 				goto err;
 			}
 
-			part_info_t *new_part = add_part(&parts_hdr);
+			part_info_t *new_part = add_part(hdr);
 
 			if (new_part) {
 				strcpy(new_part->name, name);
 				strcpy(new_part->part, name);
 				realpath(file, new_part->path);
-
-				struct stat stat_buf;
-				stat(file, &stat_buf);
-
-				new_part->size = stat_buf.st_size;
 			}
 			else {
 				printf("%s[%d] - can not allocate memory\n", __func__, __LINE__);
@@ -110,40 +115,82 @@ int create_parts_arr(int argc, char *argv[])
 	return 0;
 
 err:
-	free_parts();
+	free_parts(hdr);
 	return -1;
 }
 
-
-void add_pdls(void)
+int add_pdls(parts_hdr_t **hdr)
 {
-#if 0
-	int num = fullfw_find_part(parts_hdr, "pdl1");
-	if (num >= 0) {
-		pdl1_addr = parts_hdr->parts[num].loadaddr;
-		pdl1_buf.data = PARTS_DATA_BASE(parts_hdr) + parts_hdr->parts[num].offset;
-		pdl1_buf.size = parts_hdr->parts[num].size;
+	part_info_t *part_info = fullfw_find_part(*hdr, "pdl1");
+	int cnt;
 
-		printf("pdl1 from fullfw\n");
-	}
-	num = fullfw_find_part(parts_hdr, "pdl2");
-	if (num >= 0) {
-		pdl2_addr = parts_hdr->parts[num].loadaddr;
-		pdl2_buf.data = PARTS_DATA_BASE(parts_hdr) + parts_hdr->parts[num].offset;
-		pdl2_buf.size = parts_hdr->parts[num].size;
+	if (!part_info) {
+		part_info = ins_part(hdr, 0);
+		if (!part_info)
+			return -1;
+		strcpy(part_info->part, "pdl1");
+		strcpy(part_info->name, "pdl1");
 
-		printf("pdl2 from fullfw\n");
+		cnt = 0;
+		cnt += sprintf(part_info->path + cnt, get_prog_dir());
+		cnt += sprintf(part_info->path + cnt, PDL1_PATH);
+
+		printf("local pdl1 used\n");
 	}
-#endif
+	part_info->loadaddr = PDL1_ADDR;
+
+	part_info = fullfw_find_part(*hdr, "pdl2");
+	if (!part_info) {
+		part_info = ins_part(hdr, 1);
+		if (!part_info)
+			return -1;
+		strcpy(part_info->part, "pdl2");
+		strcpy(part_info->name, "pdl2");
+
+		cnt = 0;
+		cnt += sprintf(part_info->path + cnt, get_prog_dir());
+		cnt += sprintf(part_info->path + cnt, PDL2_PATH);
+
+		printf("local pdl2 used\n");
+	}
+	part_info->loadaddr = PDL2_ADDR;
+
+	return 0;
 }
 
-int pack_img(void)
+void calc_parts(parts_hdr_t *hdr)
+{
+	part_info_t *part_info;
+	int total_size = 0;
+
+	part_foreach(hdr, part_info) {
+		struct stat stat_buf;
+		stat(part_info->path, &stat_buf);
+
+		part_info->size = stat_buf.st_size;
+		part_info->offset = total_size;
+		total_size += part_info->size;
+	}
+}
+
+int pack_img(parts_hdr_t *hdr)
 {
 	int fd = open(FULLFW_NAME, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
 	if ( fd < 0) {
 		printf("can't create new file: %s\n", FULLFW_NAME);
 		return -1;
 	}
+
+	write_cont(fd, (char *)hdr, PARTS_HDR_SIZE(hdr));
+
+	part_info_t *part_info;
+	part_foreach(hdr, part_info) {
+		mmap_file_t *file = load_file(part_info->path);
+		write_cont(fd, file->buf.data, file->buf.size);
+		close_file(file);
+	}
+
+	close(fd);
 }
 
 void usage(void)
@@ -203,14 +250,8 @@ int unpack_img(char *file_name)
 
 		char *ptr = PARTS_DATA_BASE(hdr) + part_info->offset;
 
-		while (total_cnt < part_info->size) {
-			int write_cnt = write(fd, ptr + total_cnt, part_info->size - total_cnt);
-			if (write_cnt < 0) {
-				printf("write to file: %s failed\n", part_info->part);
-				break;
-			}
-			total_cnt += write_cnt;
-		}
+		write_cont(fd, ptr, part_info->size);
+
 		close(fd);
 	}
 
@@ -223,18 +264,18 @@ int main(int argc, char *argv[])
 {
 	if (argc > 1) {
 		if (strcmp(argv[1], "-p") == 0) {
-			if (create_parts_arr(argc, argv))
+			parts_hdr_t *parts_hdr = NULL;
+
+			if (create_parts_arr(argc, argv, &parts_hdr))
 				return -1;
 
-			part_info_t *new = ins_part(&parts_hdr, 1);
-			strcpy(new->part, "inserted");
-			strcpy(new->path, "inserted_path");
+			add_pdls(&parts_hdr);
 
-			int i;
-			for (i = 0; i < parts_hdr->part_cnt; i++)
-				printf("%s - %s\n", parts_hdr->parts[i].part, parts_hdr->parts[i].path);
+			calc_parts(parts_hdr);
 
-			free_parts();
+			pack_img(parts_hdr);
+
+			free_parts(&parts_hdr);
 		}
 		else if (strcmp(argv[1], "-u") == 0) {
 			if (argc != 3) {

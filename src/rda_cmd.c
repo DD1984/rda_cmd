@@ -19,7 +19,7 @@
 #include "fullfw.h"
 #include "file_mmap.h"
 #include "pdls.h"
-
+#include "prog_dir.h"
 
 #define UPLOAD_CHUNK_SIZE_PDL (4 * 1024)
 
@@ -370,8 +370,18 @@ int main(int argc, char *argv[])
 		u32 pdl1_addr = PDL1_ADDR;
 		u32 pdl2_addr = PDL2_ADDR;
 
-		mmap_file_t *pdl1_file = load_file(PDL1_PATH);
-		mmap_file_t *pdl2_file = load_file(PDL2_PATH);
+		char path[1024];
+		int cnt;
+
+		cnt = 0;
+		cnt += sprintf(part_info->path + cnt, get_prog_dir());
+		cnt += sprintf(part_info->path + cnt, PDL1_PATH);
+		mmap_file_t *pdl1_file = load_file(path);
+
+		cnt = 0;
+		cnt += sprintf(part_info->path + cnt, get_prog_dir());
+		cnt += sprintf(part_info->path + cnt, PDL2_PATH);
+		mmap_file_t *pdl2_file = load_file(path);
 
 		//???? проверка, что файлы открылись
 

@@ -24,7 +24,8 @@ typedef struct {
 } parts_hdr_t;
 
 
-#define PARTS_DATA_BASE(hdr) ((char *)hdr + offsetof(parts_hdr_t, parts) + hdr->part_cnt * sizeof(part_info_t))
+#define PARTS_HDR_SIZE(hdr) (offsetof(parts_hdr_t, parts) + hdr->part_cnt * sizeof(part_info_t))
+#define PARTS_DATA_BASE(hdr) ((char *)hdr + PARTS_HDR_SIZE(hdr))
 
 #define part_foreach(parts_hdr, part_info) \
        for (part_info = &parts_hdr->parts[0]; part_info < &parts_hdr->parts[parts_hdr->part_cnt]; part_info++)
