@@ -132,8 +132,8 @@ int add_pdls(parts_hdr_t **hdr)
 		strcpy(part_info->name, "pdl1");
 
 		cnt = 0;
-		cnt += sprintf(part_info->path + cnt, get_prog_dir());
-		cnt += sprintf(part_info->path + cnt, PDL1_PATH);
+		cnt += sprintf(part_info->path + cnt, "%s", get_prog_dir());
+		cnt += sprintf(part_info->path + cnt, "%s", PDL1_PATH);
 
 		printf("local pdl1 used\n");
 	}
@@ -148,8 +148,8 @@ int add_pdls(parts_hdr_t **hdr)
 		strcpy(part_info->name, "pdl2");
 
 		cnt = 0;
-		cnt += sprintf(part_info->path + cnt, get_prog_dir());
-		cnt += sprintf(part_info->path + cnt, PDL2_PATH);
+		cnt += sprintf(part_info->path + cnt, "%s", get_prog_dir());
+		cnt += sprintf(part_info->path + cnt, "%s", PDL2_PATH);
 
 		printf("local pdl2 used\n");
 	}

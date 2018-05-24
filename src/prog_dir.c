@@ -8,7 +8,7 @@ char *get_prog_dir(void)
 	static char dir[1024];
 	char buf[32];
 
-	sprintf(buf, "/proc/%zu/exe", getpid());
+	sprintf(buf, "/proc/%d/exe", getpid());
 
 	ssize_t ret = readlink(buf, dir, sizeof(dir));
 	if (ret < 0) {

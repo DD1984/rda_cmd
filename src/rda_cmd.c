@@ -374,13 +374,13 @@ int main(int argc, char *argv[])
 		int cnt;
 
 		cnt = 0;
-		cnt += sprintf(path + cnt, get_prog_dir());
-		cnt += sprintf(path + cnt, PDL1_PATH);
+		cnt += sprintf(path + cnt, "%s", get_prog_dir());
+		cnt += sprintf(path + cnt, "%s", PDL1_PATH);
 		mmap_file_t *pdl1_file = load_file(path);
 
 		cnt = 0;
-		cnt += sprintf(path + cnt, get_prog_dir());
-		cnt += sprintf(path + cnt, PDL2_PATH);
+		cnt += sprintf(path + cnt, "%s", get_prog_dir());
+		cnt += sprintf(path + cnt, "%s", PDL2_PATH);
 		mmap_file_t *pdl2_file = load_file(path);
 
 		//???? проверка, что файлы открылись
