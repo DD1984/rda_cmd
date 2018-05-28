@@ -34,5 +34,6 @@ typedef struct {
 part_info_t *fullfw_find_part(parts_hdr_t *hdr, char *part);
 
 void prn_part_info(part_info_t *ptr);
+int check_img(parts_hdr_t *hdr, int max_size);
 
 #endif

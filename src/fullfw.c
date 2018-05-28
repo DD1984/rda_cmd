@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include <ctype.h>
 
 #include "fullfw.h"
 
@@ -25,4 +26,45 @@ part_info_t *fullfw_find_part(parts_hdr_t *hdr, char *part)
 			return part_info;
 	}
 	return NULL;
+}
+
+#define MAX_PART_NUM 15
+
+int check_img(parts_hdr_t *hdr, int max_size)
+{
+	int i, j;
+	part_info_t *part_info;
+
+	if (hdr->part_cnt > MAX_PART_NUM) {
+		printf("invalid image: partition count - %d, but must be less than %d\n", hdr->part_cnt, MAX_PART_NUM);
+		return -1;
+	}
+
+	i = 0;
+
+	part_foreach(hdr, part_info) {
+
+		j = 0;
+		while ((j < sizeof(part_info->part) && (part_info->part[j] != 0))) {
+
+			if (!isprint(part_info->part[j]))
+				i = sizeof(part_info->part);
+			else
+				j++;
+		}
+
+		if ((*(part_info->part) == 0) || j >= sizeof(part_info->part)) {
+			printf("invalid image: name of partition %d - unprintable\n", i);
+			return -1;
+		}
+
+		if (part_info->offset + part_info->size > max_size) {
+			printf("invalid image: partition %d - outside the file\n", i);
+			return -1;
+		}
+
+		i++;
+	}
+
+	return 0;
 }

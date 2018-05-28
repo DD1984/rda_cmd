@@ -211,6 +211,9 @@ int show_img_info(char *file_name)
 	parts_hdr_t *hdr = (parts_hdr_t *)file->buf.data;
 	part_info_t *part_info;
 
+	if (check_img(hdr, file->buf.size))
+		return -1;
+
 	printf("=======================\n");
 	part_foreach(hdr, part_info) {
 		prn_part_info(part_info);
@@ -232,6 +235,9 @@ int unpack_img(char *file_name)
 
 	parts_hdr_t *hdr = (parts_hdr_t *)file->buf.data;
 	part_info_t *part_info;
+
+	if (check_img(hdr, file->buf.size))
+		return -1;
 
 	part_foreach(hdr, part_info) {
 		if (!access(part_info->part, F_OK))

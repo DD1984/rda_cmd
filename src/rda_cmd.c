@@ -352,8 +352,11 @@ int main(int argc, char *argv[])
 	if ((user_cmd == WRITE_PART || user_cmd == FULLFW) && file_name) {
 		file = load_file(file_name);
 
-		if (user_cmd == FULLFW)
+		if (user_cmd == FULLFW) {
 			parts_hdr = (parts_hdr_t *)file->buf.data;
+			if (check_img(parts_hdr, file->buf.size))
+				goto err;
+		}
 	}
 
 	int tty_timeout = get_tty_timeout();
@@ -510,6 +513,7 @@ int main(int argc, char *argv[])
 			printf("unknown user cmd: %d\n", user_cmd);
 	}
 
+err:
 	close_file(file);
 
 	close_tty();
