@@ -5,34 +5,23 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <sys/select.h>
+#include <errno.h>
 
 #include "tty.h"
 
 int tty_fd;
 
+int tty_timeout = DEFAULT_TTY_READ_TIMEOUT;
+
 int get_tty_timeout(void)
 {
-	struct termios tty_attr;
-	memset(&tty_attr, 0, sizeof(tty_attr));
-
-	if (tcgetattr(tty_fd, &tty_attr))
-		return -1;
-	 return tty_attr.c_cc[VTIME] / 10;
+	return tty_timeout;
 }
 
 int set_tty_timeout(int timeout)
 {
-	struct termios tty_attr;
-	memset(&tty_attr, 0, sizeof(tty_attr));
-
-	if (tcgetattr(tty_fd, &tty_attr))
-		return -1;
-
-	tty_attr.c_cc[VTIME] = timeout * 10;
-
-	if (tcsetattr(tty_fd, 0, &tty_attr))
-		return -1;
-	return 0;
+	tty_timeout = timeout;
 }
 
 int set_tty_attr(int fd_dev, int speed)
@@ -54,8 +43,9 @@ int set_tty_attr(int fd_dev, int speed)
 											// no canonical processing
 	tty_attr.c_oflag = 0;					// no remapping, no delays
 
-	tty_attr.c_cc[VMIN]  = 0;				// read doesn't block
-	tty_attr.c_cc[VTIME] = 25 * 10;				// 25 x 10 x 0.1 seconds read timeout
+	// generic read
+	tty_attr.c_cc[VMIN]  = 0;
+	tty_attr.c_cc[VTIME] = 0;
 
 	tty_attr.c_iflag &= ~(IXON | IXOFF | IXANY); // shut off xon/xoff ctrl
 
@@ -110,5 +100,27 @@ int write_tty(char *buf, size_t len)
 
 int read_tty(char *buf, size_t len)
 {
+	fd_set rfds;
+	struct timeval tv;
+	int retval;
+
+	FD_ZERO(&rfds);
+	FD_SET(tty_fd, &rfds);
+
+	tv.tv_sec = tty_timeout;
+	tv.tv_usec = 0;
+
+	retval = select(FD_SETSIZE, &rfds, NULL, NULL, &tv);
+
+	if (retval == -1) {
+		int errsv = errno;
+		printf("select() err: (%d)%s\n", errsv, strerror(errsv));
+		return -1;
+	}
+	if (retval == 0) {
+		printf("tty read timeout expired\n");
+		return -1;
+	}
+
 	return read(tty_fd, buf, len);
 }

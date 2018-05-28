@@ -135,6 +135,24 @@ int read_partition_table(char **parts)
 	return ret;
 }
 
+// проверяет, совпадает ли таблица разделов в pdl и текущая записанная на флешке
+int check_partition_table(void)
+{
+	u8 buffer[PDL_MAX_DATA_SIZE];
+	buf_t from_dev;
+
+	from_dev.data = buffer;
+	from_dev.size = sizeof(buffer);
+
+	int ret = send_cmd_data_from_dev(CHECK_PARTITION_TABLE, &from_dev);
+	if (!ret) {
+		ret = from_dev.data[0];
+		return ret;
+	}
+
+	return 0;
+}
+
 #define DOWNLOAD_CHUNK_SIZE (256 * 1024) //кратно nand page size 4kb
 #define FACTORYDATA_SIZE (32 * 1024)
 
@@ -258,6 +276,27 @@ int get_pdl_log(void)
 	return ret;
 }
 
+enum reboot_type {
+	REBOOT_TO_NORMAL_MODE,
+	REBOOT_TO_DOWNLOAD_MODE,
+	REBOOT_TO_FASTBOOT_MODE,
+	REBOOT_TO_RECOVERY_MODE,
+	REBOOT_TO_CALIB_MODE,
+	REBOOT_TO_PDL2_MODE,
+};
+
+int rda_reboot(enum reboot_type type)
+{
+	buf_t to_dev;
+
+	u8 mode = type;
+
+	to_dev.data = &mode;
+	to_dev.size = 1;
+
+	return send_cmd_data_to_dev(NORMAL_RESET, &to_dev);
+}
+
 void show_help(void)
 {
 	printf("\tparts                               - read partition table\n");
@@ -359,14 +398,11 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	int tty_timeout = get_tty_timeout();
-	if (tty_timeout != -1)
-		set_tty_timeout(1); // т.к перввый вызов get_pdl_version() может не вернуть результаов так как в BootRom нет такой команды
+	set_tty_timeout(1); // т.к перввый вызов get_pdl_version() не возвращает результаты, т. к. в BootRom нет такой команды
 
 	int ret = get_pdl_version(NULL);
 
-	if (tty_timeout != -1)
-		set_tty_timeout(tty_timeout); //возвращаем обратно
+	set_tty_timeout(DEFAULT_TTY_READ_TIMEOUT);
 
 	if (ret) {
 
@@ -492,9 +528,7 @@ int main(int argc, char *argv[])
 			upload_buf(&(file->buf), part_name, 0, UPLOAD_CHUNK_SIZE);
 		break;
 		case RESET:
-			//есть возможность загрузить в нужный режим
-			//если послать в первом байте номер режима
-			send_cmd_only(NORMAL_RESET);
+			rda_reboot(REBOOT_TO_NORMAL_MODE);
 		break;
 		case FULLFW:
 			part_foreach(parts_hdr, part_info) {
