@@ -590,7 +590,9 @@ int main(int argc, char *argv[])
 
 				upload_buf(&buf, part_info->part, 0, UPLOAD_CHUNK_SIZE);
 			}
-			send_cmd_only(NORMAL_RESET);
+
+			printf("All done - reseting device ...\n");
+			rda_reboot(REBOOT_TO_NORMAL_MODE);
 		break;
 		default:
 			printf("unknown user cmd: %d\n", user_cmd);
