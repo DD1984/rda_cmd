@@ -136,6 +136,7 @@ int read_partition_table(char **parts)
 }
 
 // проверяет, совпадает ли таблица разделов в pdl и текущая записанная на флешке
+// если совпадают возвращается 1
 int check_partition_table(void)
 {
 	u8 buffer[PDL_MAX_DATA_SIZE];
@@ -297,6 +298,101 @@ int rda_reboot(enum reboot_type type)
 	return send_cmd_data_to_dev(NORMAL_RESET, &to_dev);
 }
 
+typedef struct {
+	mmap_file_t *file;
+	u32 addr;
+	buf_t buf;
+} pdl_t;
+
+pdl_t pdl1, pdl2;
+
+int load_pdls(mmap_file_t *file)
+{
+	memset(&pdl1, 0, sizeof(pdl_t));
+	memset(&pdl2, 0, sizeof(pdl_t));
+
+	printf("pdl1 mem addr: 0x%zx\n", (size_t)&pdl1);
+	printf("pdl2 mem addr: 0x%zx\n", (size_t)&pdl2);
+
+	if (file) {
+		parts_hdr_t *parts_hdr = (parts_hdr_t *)file->buf.data;
+		part_info_t *part_info = fullfw_find_part(parts_hdr, "pdl1");
+		if (part_info) {
+			pdl1.addr = part_info->loadaddr;
+			pdl1.buf.data = PARTS_DATA_BASE(parts_hdr) + part_info->offset;
+			pdl1.buf.size = part_info->size;
+
+			printf("pdl1 from fullfw\n");
+		}
+		part_info = fullfw_find_part(parts_hdr, "pdl2");
+		if (part_info) {
+			pdl2.addr = part_info->loadaddr;
+			pdl2.buf.data = PARTS_DATA_BASE(parts_hdr) + part_info->offset;
+			pdl2.buf.size = part_info->size;
+
+			printf("pdl2 from fullfw\n");
+		}
+	}
+
+	char path[1024];
+	int cnt;
+
+	//???? проверка, что файлы открылись
+
+	if (pdl1.buf.data == 0) {
+		pdl1.addr = PDL1_ADDR;
+
+		cnt = 0;
+		cnt += sprintf(path + cnt, "%s", get_prog_dir());
+		cnt += sprintf(path + cnt, "%s", PDL1_PATH);
+		pdl1.file = load_file(path);
+
+		memcpy(&pdl1.buf, &pdl1.file->buf, sizeof(buf_t));
+
+		printf("pdl1 is loacal\n");
+	}
+
+	if (pdl2.buf.data == 0) {
+		pdl2.addr = PDL2_ADDR;
+
+		cnt = 0;
+		cnt += sprintf(path + cnt, "%s", get_prog_dir());
+		cnt += sprintf(path + cnt, "%s", PDL2_PATH);
+		pdl2.file = load_file(path);
+
+		memcpy(&pdl2.buf, &pdl2.file->buf, sizeof(buf_t));
+
+		printf("pdl2 is loacal\n");
+	}
+
+	return 0;
+}
+
+void close_pdls(void)
+{
+	close_file(pdl1.file);
+	close_file(pdl2.file);
+
+	memset(&pdl1, 0, sizeof(pdl_t));
+	memset(&pdl2, 0, sizeof(pdl_t));
+}
+
+int exec_pdl(pdl_t *pdl)
+{
+	//в загрузчике не определяется какой именно pdl загружаем, важен лишь его адрес
+	if (upload_buf(&pdl->buf, "pdl", pdl->addr, UPLOAD_CHUNK_SIZE_PDL)) {
+		printf("upload pdl (mem addr: 0x%zx) failed\n", (size_t)pdl);
+		return -1;
+	}
+	send_cmd_only(EXEC_DATA); //не возвращает статус
+
+	sleep(2); //ожидание выполнения
+
+	tty_flush();
+
+	return send_cmd_only(CONNECT);
+}
+
 void show_help(void)
 {
 	printf("\tparts                               - read partition table\n");
@@ -380,8 +476,6 @@ int main(int argc, char *argv[])
 	if (open_tty() != 0)
 		return -1;
 
-	int tty_opened = 1;
-
 	if (send_cmd_only(CONNECT)) {
 		close_tty();
 		printf("can't connect to device\n");
@@ -398,6 +492,11 @@ int main(int argc, char *argv[])
 		}
 	}
 
+	if (user_cmd == FULLFW)
+		load_pdls(file);
+	else
+		load_pdls(NULL);
+
 	set_tty_timeout(1); // т.к перввый вызов get_pdl_version() не возвращает результаты, т. к. в BootRom нет такой команды
 
 	int ret = get_pdl_version(NULL);
@@ -405,82 +504,11 @@ int main(int argc, char *argv[])
 	set_tty_timeout(DEFAULT_TTY_READ_TIMEOUT);
 
 	if (ret) {
-
-		u32 pdl1_addr = PDL1_ADDR;
-		u32 pdl2_addr = PDL2_ADDR;
-
-		char path[1024];
-		int cnt;
-
-		cnt = 0;
-		cnt += sprintf(path + cnt, "%s", get_prog_dir());
-		cnt += sprintf(path + cnt, "%s", PDL1_PATH);
-		mmap_file_t *pdl1_file = load_file(path);
-
-		cnt = 0;
-		cnt += sprintf(path + cnt, "%s", get_prog_dir());
-		cnt += sprintf(path + cnt, "%s", PDL2_PATH);
-		mmap_file_t *pdl2_file = load_file(path);
-
-		//???? проверка, что файлы открылись
-
-		buf_t pdl1_buf;
-		buf_t pdl2_buf;
-
-		memcpy(&pdl1_buf, &pdl1_file->buf, sizeof(buf_t));
-		memcpy(&pdl2_buf, &pdl2_file->buf, sizeof(buf_t));
-
-		if (user_cmd == FULLFW) {
-			part_info = fullfw_find_part(parts_hdr, "pdl1");
-			if (part_info) {
-				pdl1_addr = part_info->loadaddr;
-				pdl1_buf.data = PARTS_DATA_BASE(parts_hdr) + part_info->offset;
-				pdl1_buf.size = part_info->size;
-
-				printf("pdl1 from fullfw\n");
-			}
-			part_info = fullfw_find_part(parts_hdr, "pdl2");
-			if (part_info) {
-				pdl2_addr = part_info->loadaddr;
-				pdl2_buf.data = PARTS_DATA_BASE(parts_hdr) + part_info->offset;
-				pdl2_buf.size = part_info->size;
-
-				printf("pdl2 from fullfw\n");
-			}
-		}
-
-		//exec pdl1
-		if (upload_buf(&pdl1_buf, "pdl1", pdl1_addr, UPLOAD_CHUNK_SIZE_PDL)) {
-			printf("upload pdl1 failed\n");
-			return -1; //???? clear
-		}
-		send_cmd_only(EXEC_DATA); //не возвращает статус
-
-		sleep(2);
-
-		send_cmd_only(CONNECT);
-
-		//exec pdl2
-		if (upload_buf(&pdl2_buf, "pdl2", pdl2_addr, UPLOAD_CHUNK_SIZE_PDL)) {
-			printf("upload pdl2 failed\n");
-			return -1; // ???? clear
-		}
-		send_cmd_only(EXEC_DATA); //не возвращает статус
-
-		close_file(pdl1_file);
-		close_file(pdl2_file);
-
-		sleep(2);
-
-		close_tty(); //костыль для сброса буферов, нужно разобраться, т.к. и pdl1 и pdl2 после запуска отправляют ACK и можно убрать sleep()
-		tty_opened  = 0;
+		exec_pdl(&pdl1);
+		exec_pdl(&pdl2);
 	}
 
-	if (!tty_opened) {
-		open_tty();
-		send_cmd_only(CONNECT);
-	}
-
+	//TODO: нужно добавить установку дебага в exec_pdl() иначе после reload_pdl2 не работает
 	set_pdl_dbg(
 		PDL_DBG_PDL |
 		//PDL_DBG_USB_EP0 |
@@ -531,8 +559,29 @@ int main(int argc, char *argv[])
 			rda_reboot(REBOOT_TO_NORMAL_MODE);
 		break;
 		case FULLFW:
+			//сначала загрузчик, т.к на его разделе содержатся mtdpatrs и сохраняются туда вместе с ним
+			part_info = fullfw_find_part(parts_hdr, "bootloader");
+			if (part_info) {
+				int need_reload_pdl2 = !check_partition_table();
+
+				buf_t buf;
+				buf.data = PARTS_DATA_BASE(parts_hdr) + part_info->offset;
+				buf.size = part_info->size;
+
+				upload_buf(&buf, part_info->part, 0, UPLOAD_CHUNK_SIZE);
+
+				//чтобы перезагрузить mtdparts уже из текущего pdl
+				//т.к. при перешивке загрузчика они записались на флеш, но не подгрузились
+				if (need_reload_pdl2) {
+					printf("reloading pdl2 for reread mtdparts\n");
+					exec_pdl(&pdl2);
+				}
+			}
+			//потом все остальное
 			part_foreach(parts_hdr, part_info) {
 				if (strncmp(part_info->part, "pdl", 3) == 0)
+					continue;
+				if (strcmp(part_info->part, "bootloader") == 0)
 					continue;
 
 				buf_t buf;
@@ -548,6 +597,8 @@ int main(int argc, char *argv[])
 	}
 
 err:
+	close_pdls();
+
 	close_file(file);
 
 	close_tty();

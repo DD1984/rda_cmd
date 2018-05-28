@@ -124,3 +124,8 @@ int read_tty(char *buf, size_t len)
 
 	return read(tty_fd, buf, len);
 }
+
+void tty_flush(void)
+{
+	tcflush(tty_fd, TCIOFLUSH);
+}
