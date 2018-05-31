@@ -7,10 +7,86 @@
 #include <stdio.h>
 #include <sys/select.h>
 #include <errno.h>
+#include <sys/ioctl.h>
+#include <sys/types.h>
+#include <dirent.h>
+#include <unistd.h>
+#include <limits.h>
+#include <stdlib.h>
 
 #include "tty.h"
 
 int tty_fd;
+
+#define SYSFS_TTY_DIR "/sys/class/tty/"
+#define DEV_VID 0x0525
+#define DEV_PID 0xa4a7
+#define DEV_NAME "ttyACM"
+
+int find_dev(void)
+{
+	DIR *dir = opendir(SYSFS_TTY_DIR);
+	struct dirent *dp;
+
+	if (!dir) {
+		printf("can't open "SYSFS_TTY_DIR"\n");
+		return -1;
+	}
+
+	char * file_name;
+	while ((dp = readdir(dir)) != NULL) {
+		if (strncmp(dp->d_name, DEV_NAME, strlen(DEV_NAME)))
+			continue;
+
+		char path[1024];
+		char real_path[1024];
+
+		sprintf(path, SYSFS_TTY_DIR"%s", dp->d_name);
+
+		if (!realpath(path, real_path))
+			goto find_err;
+
+		sprintf(path, "%s/device", real_path);
+		if (!realpath(path, real_path))
+			goto find_err;
+
+		int i = strlen(real_path) - 1;
+		while (i >=0 && real_path[i] != '/')
+			i--;
+		real_path[i + 1] = 0;
+
+		unsigned short pid, vid;
+		FILE *fd;
+
+		sprintf(path, "%s/idVendor", real_path);
+		fd = fopen(path, "r");
+		if (fd < 0)
+			goto find_err;
+		fscanf(fd, "%hx", &vid);
+		fclose(fd);
+
+		sprintf(path, "%s/idProduct", real_path);
+		fd = fopen(path, "r");
+		if (fd < 0)
+			goto find_err;
+		fscanf(fd, "%hx", &pid);
+		fclose(fd);
+
+
+		if (pid == DEV_PID && vid == DEV_VID) {
+			int dev_num;
+			sscanf(dp->d_name, DEV_NAME"%d", &dev_num);
+
+			return dev_num;
+		}
+	}
+
+find_err:
+	if (dir)
+		closedir(dir);
+
+	return -1;
+}
 
 int tty_timeout = DEFAULT_TTY_READ_TIMEOUT;
 
@@ -68,13 +144,24 @@ int set_tty_attr(int fd_dev, int speed)
 
 int open_tty(void)
 {
-	tty_fd = open(TTY_DEV, O_RDWR | O_NOCTTY | O_SYNC);
+	int dev_num = find_dev();
+	if (dev_num < 0) {
+		printf("can't find device\n");
+		return -1;
+	}
+
+	char buf[64];
+	sprintf(buf, "/dev/"DEV_NAME"%d", dev_num);
+
+	printf("using %s\n", buf);
+
+	tty_fd = open(buf, O_RDWR | O_NOCTTY | O_SYNC);
 
 	if (tty_fd < 0) {
-		printf("Can't open device: %s\n", TTY_DEV);
+		printf("Can't open device: %s\n", buf);
 		goto end;
 	}
-	
+
 	if (set_tty_attr(tty_fd, BAUDRATE)) {
 		printf("Can't set tty attr\n");
 		goto end;

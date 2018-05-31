@@ -15,6 +15,7 @@ char *get_prog_dir(void)
 		dir[0] = 0;
 	}
 	else {
+		dir[ret] = 0;
 		int i = strlen(dir) - 1;
 		while (i >=0 && dir[i] != '/')
 			i--;

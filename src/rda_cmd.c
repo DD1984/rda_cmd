@@ -349,7 +349,7 @@ int load_pdls(mmap_file_t *file)
 
 		memcpy(&pdl1.buf, &pdl1.file->buf, sizeof(buf_t));
 
-		printf("pdl1 is loacal\n");
+		printf("pdl1 is local\n");
 	}
 
 	if (pdl2.buf.data == 0) {
@@ -362,7 +362,7 @@ int load_pdls(mmap_file_t *file)
 
 		memcpy(&pdl2.buf, &pdl2.file->buf, sizeof(buf_t));
 
-		printf("pdl2 is loacal\n");
+		printf("pdl2 is local\n");
 	}
 
 	return 0;

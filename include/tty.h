@@ -1,7 +1,6 @@
 #ifndef __TTY_H__
 #define __TTY_H__
 
-#define TTY_DEV "/dev/ttyACM0"
 #define BAUDRATE B921600
 
 #define DEFAULT_TTY_READ_TIMEOUT 60
