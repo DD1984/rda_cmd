@@ -22,6 +22,7 @@ int tty_fd;
 #define DEV_VID 0x0525
 #define DEV_PID 0xa4a7
 #define DEV_NAME "ttyACM"
+int tty_timeout = DEFAULT_TTY_READ_TIMEOUT;
 
 int find_dev(void)
 {
@@ -88,7 +89,51 @@ find_err:
 	return -1;
 }
 
-int tty_timeout = DEFAULT_TTY_READ_TIMEOUT;
+int check_used(char *name)
+{
+	DIR *proc = NULL;
+	struct dirent *proc_entry;
+
+	proc = opendir("/proc");
+	if (!proc) {
+		printf("can't open procfs\n");
+		return -1;
+	}
+
+	while((proc_entry = readdir(proc)) != NULL) {
+		pid_t pid = strtoul(proc_entry->d_name, NULL, 10);
+		if (pid != 0) {
+			char path[1024];
+
+			sprintf(path, "/proc/%d/fd", pid);
+
+			DIR *proc_fd = opendir(path);
+			struct dirent *proc_fd_entry;
+
+			if (!proc_fd)
+				continue;
+
+			while((proc_fd_entry = readdir(proc_fd)) != NULL) {
+				char link[1024];
+				sprintf(path, "/proc/%d/fd/%s", pid, proc_fd_entry->d_name);
+				int ret = readlink(path, link, sizeof(link));
+				if (ret == -1 || ret >= sizeof(link))
+					continue;
+
+				link[ret] = 0;
+
+				if (strcmp(link, name) == 0) {
+					printf("%s used by pid: %d\n", name, pid);
+					return -1;
+				}
+			}
+			closedir(proc_fd);
+		}
+	}
+	closedir(proc);
+
+	return 0;
+}
 
 int get_tty_timeout(void)
 {
@@ -154,6 +199,11 @@ int open_tty(void)
 	sprintf(buf, "/dev/"DEV_NAME"%d", dev_num);
 
 	printf("using %s\n", buf);
+
+	while (check_used(buf) != 0) {
+		printf("waithing...\n");
+		sleep(1);
+	}
 
 	tty_fd = open(buf, O_RDWR | O_NOCTTY | O_SYNC);
 
