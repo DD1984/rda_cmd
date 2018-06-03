@@ -13,6 +13,7 @@
 #include <unistd.h>
 #include <limits.h>
 #include <stdlib.h>
+#include <sys/time.h>
 
 #include "tty.h"
 
@@ -22,7 +23,7 @@ int tty_fd;
 #define DEV_VID 0x0525
 #define DEV_PID 0xa4a7
 #define DEV_NAME "ttyACM"
-int tty_timeout = DEFAULT_TTY_READ_TIMEOUT;
+int tty_timeout = TTY_WAIT_RX_TIMEOUT;
 
 int find_dev(void)
 {
@@ -166,7 +167,7 @@ int set_tty_attr(int fd_dev, int speed)
 
 	// generic read
 	tty_attr.c_cc[VMIN]  = 0;
-	tty_attr.c_cc[VTIME] = 0;
+	tty_attr.c_cc[VTIME] = TTY_RX_PKT_TIMEOUT * 10;
 
 	tty_attr.c_iflag &= ~(IXON | IXOFF | IXANY); // shut off xon/xoff ctrl
 
@@ -183,7 +184,6 @@ int set_tty_attr(int fd_dev, int speed)
 
 	if (tcsetattr(fd_dev, 0, &tty_attr))
 		return -1;
-
 	return 0;
 }
 
@@ -239,7 +239,7 @@ int read_tty(char *buf, size_t len)
 {
 	fd_set rfds;
 	struct timeval tv;
-	int retval;
+	ssize_t retval;
 
 	FD_ZERO(&rfds);
 	FD_SET(tty_fd, &rfds);
@@ -255,11 +255,40 @@ int read_tty(char *buf, size_t len)
 		return -1;
 	}
 	if (retval == 0) {
-		printf("tty read timeout expired\n");
+		printf("tty wait timeout expired (%d sec)\n", tty_timeout);
 		return -1;
 	}
 
-	return read(tty_fd, buf, len);
+	int total = 0;
+	while (total < len) {
+		struct timeval before, after;
+		unsigned int _before, _after;
+
+		gettimeofday(&before, NULL);
+
+		retval = read(tty_fd, buf + total, len);
+
+		gettimeofday(&after, NULL);
+
+		if (retval < 0) {
+			int errsv = errno;
+			printf("read() return %zd err: %d(%s)\n", retval, errsv, strerror(errsv));
+			return -1;
+		}
+
+		_after = after.tv_sec * 100 + after.tv_usec / 10000;
+		_before = before.tv_sec * 100 + before.tv_usec / 10000;
+
+		unsigned int delta = _after - _before;
+
+		if (delta > TTY_RX_PKT_TIMEOUT * 100) {
+			printf("tty pkt timeout expired (%d sec) read() ret %zd[%zd]\n", TTY_RX_PKT_TIMEOUT, retval, len);
+			return -1;
+		}
+		total += retval;
+	}
+
+	return len;
 }
 
 void tty_flush(void)

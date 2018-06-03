@@ -161,7 +161,7 @@ int read_partition(char *name, char *out_file)
 {
 	char *buf;
 	u32 buf_size;
-	u64 part_size;
+	size_t part_size;
 
 	if (strcmp("factorydata", name) == 0) {
 		buf_size = FACTORYDATA_SIZE;
@@ -193,10 +193,16 @@ int read_partition(char *name, char *out_file)
 		}
 	}
 
-	buf = malloc(buf_size);
+	printf("part_size: %zu\n", part_size);
 
-	u64 total_rcv = 0;
-	u64 last_ff = 0;
+	buf = malloc(buf_size);
+	if (!buf) {
+		printf("%s[%d] can't allocate memory\n", __func__, __LINE__);
+		return -1;
+	}
+
+	size_t total_rcv = 0;
+	size_t last_ff = 0;
 
 	int fd = open(out_file, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
 
@@ -225,6 +231,10 @@ int read_partition(char *name, char *out_file)
 			printf("[%s] download error\n", __func__);
 			return -1;
 		}
+
+		if (from_dev.size == 0) //EOF
+			break;
+
 		int i;
 		for (i = (buf_size - 1); i >= 0; i--)
 			if ((unsigned char)buf[i] != 0xff) {
@@ -501,7 +511,7 @@ int main(int argc, char *argv[])
 
 	int ret = get_pdl_version(NULL);
 
-	set_tty_timeout(DEFAULT_TTY_READ_TIMEOUT);
+	set_tty_timeout(TTY_WAIT_RX_TIMEOUT);
 
 	if (ret) {
 		exec_pdl(&pdl1);

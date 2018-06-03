@@ -3,7 +3,8 @@
 
 #define BAUDRATE B921600
 
-#define DEFAULT_TTY_READ_TIMEOUT 60
+#define TTY_WAIT_RX_TIMEOUT 60 // сек
+#define TTY_RX_PKT_TIMEOUT 1 // сек
 
 int open_tty(void);
 void close_tty(void);

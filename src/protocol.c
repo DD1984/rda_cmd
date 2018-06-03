@@ -64,9 +64,21 @@ void free_pkt_mem(struct packet *pkt)
 	free(pkt);
 }
 
+#define MAX_CNT_RETRY 3
+
 int send_cmd(struct command_header *cmd_hdr, buf_t *to_dev, buf_t *from_dev)
 {
 	char rcv_buf[PDL_MAX_DATA_SIZE];
+	int retry_cnt = 0;
+
+retry:
+	if (retry_cnt != 0)
+		printf("retry #%d - cmd: %s(%d)\n", retry_cnt, str_cmd(cmd_hdr->cmd_type), cmd_hdr->cmd_type);
+
+	if (retry_cnt++ >= MAX_CNT_RETRY) {
+		printf("max retry count exceed\n");
+		return -1;
+	}
 
 	u8 *data_buf = NULL;
 	u32 data_size = 0;
@@ -84,20 +96,36 @@ int send_cmd(struct command_header *cmd_hdr, buf_t *to_dev, buf_t *from_dev)
 
 	memset(rcv_buf, 0, sizeof(rcv_buf));
 
-	usleep(10000);
-
 	int len = read_tty(rcv_buf, sizeof(struct packet_header));
 
-	if (len <= 0) {
-		printf("cmd: %s(%d), data rcvd error, len: %d\n",  str_cmd(cmd_hdr->cmd_type), cmd_hdr->cmd_type, len);
-		return -1;
+	if (len < 0) {
+		printf("rx pkt hdr failed\n");
+		goto retry;
 	}
 
 	struct packet_header *pkt_hdr = (struct packet_header *)rcv_buf;
 
-	len = 0;
-	while (len < le32toh(pkt_hdr->pkt_size))
-		len += read_tty(rcv_buf + sizeof(struct packet_header) + len, le32toh(pkt_hdr->pkt_size) - len);
+	if (pkt_hdr->tag != PACKET_TAG) {
+		printf("rcvd pkt_hdr with error pkt tag\n");
+		goto retry;
+	}
+
+	u32 pkt_size = le32toh(pkt_hdr->pkt_size);
+
+	if (pkt_size > (PDL_MAX_DATA_SIZE - sizeof(struct packet_header))) {
+		printf("rcvd pkt_hdr with error pkt_size: %u\n", pkt_size);
+		goto retry;
+	}
+
+	if (pkt_size != 0)
+		len = read_tty(rcv_buf + sizeof(struct packet_header), pkt_size);
+	else
+		len = 0;
+
+	if (len < 0) {
+		printf("rx pkt data failed\n");
+		goto retry;
+	}
 
 	u32 flowid = pkt_hdr->flowid;
 	u32 rsp = le32toh(*(int *)(rcv_buf + sizeof(struct packet_header)));
@@ -111,21 +139,22 @@ int send_cmd(struct command_header *cmd_hdr, buf_t *to_dev, buf_t *from_dev)
 			str_cmd(cmd_hdr->cmd_type), cmd_hdr->cmd_type,
 			flowid == FLOWID_ERROR ? "FLOWID_ERROR" : "FLOWID_ACK",
 			str_rsp(rsp), rsp);
-		return -1;
+		goto retry;
 	}
 	if (pkt_hdr->flowid == FLOWID_DATA) {
-		if (!from_dev || (le32toh(pkt_hdr->pkt_size) > from_dev->size)) {
-			printf("cmd: %s(%d), small size of outbuf: data len: %d, buffer_size: %d\n", str_cmd(cmd_hdr->cmd_type), cmd_hdr->cmd_type, le32toh(pkt_hdr->pkt_size), from_dev->size);
-			return -1;
+		if (!from_dev || (pkt_size > from_dev->size)) {
+			printf("cmd: %s(%d), small size of outbuf: data len: %d, buffer_size: %d\n", str_cmd(cmd_hdr->cmd_type), cmd_hdr->cmd_type, pkt_size, from_dev->size);
+			goto retry;
 		}
 
-		from_dev->size = le32toh(pkt_hdr->pkt_size);
+		from_dev->size = pkt_size;
+
 		memcpy(from_dev->data, rcv_buf + sizeof(struct packet_header), from_dev->size);
 
 		return 0;
 	}
 	printf("cmd: %s(%d), unknown response\n", str_cmd(cmd_hdr->cmd_type), cmd_hdr->cmd_type);
-	return -1;
+	goto retry;
 }
 
 // команда без данных
