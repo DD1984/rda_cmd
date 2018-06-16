@@ -21,9 +21,21 @@
 #include "pdls.h"
 #include "prog_dir.h"
 
+//#define TRUNC_READ //обрезать крайние ff в считанном файле
+
 #define UPLOAD_CHUNK_SIZE_PDL (4 * 1024)
 
 #define UPLOAD_CHUNK_SIZE (256 * 1024)
+
+unsigned int calc_persent(int cur, int total)
+{
+	float f_total = total;
+	float f_cur = cur;
+	float f_per = f_cur / (f_total / 100);
+	if (f_per > 100)
+		f_per = 100;
+	return f_per;
+}
 
 int upload_buf(buf_t *buf, char *part_name, u32 data_addr, u32 chunk_size)
 {
@@ -34,12 +46,6 @@ int upload_buf(buf_t *buf, char *part_name, u32 data_addr, u32 chunk_size)
 
 	printf("uploading %s, size: %u bytes - %3u%% ", part_name ? part_name : "", buf->size, 0);
 	fflush(stdout);
-
-	float f_buf_size = buf->size;
-	float f_chunk_size = chunk_size;
-
-	float persent_chunk = 100 / (f_buf_size / f_chunk_size);
-	float cur_persent = 0;
 
 	struct command_header cmd_hdr;
 	buf_t to_dev;
@@ -80,8 +86,7 @@ int upload_buf(buf_t *buf, char *part_name, u32 data_addr, u32 chunk_size)
 
 		total_send += chunk_buf.size;
 
-		cur_persent += persent_chunk;
-		printf("\b\b\b\b\b%3u%% ", (int)cur_persent < 100 ? (int)cur_persent : 100);
+		printf("\b\b\b\b\b%3u%% ", calc_persent(total_send, buf->size));
 		fflush(stdout);
 	}
 
@@ -127,7 +132,7 @@ int read_partition_table(char **parts)
 
 	int ret = send_cmd_data_from_dev(READ_PARTITION_TABLE, &from_dev);
 	if (!ret) {
-		from_dev.data[from_dev.size + 1] = 0;
+		from_dev.data[from_dev.size] = 0;
 		*parts = malloc(from_dev.size + 1);
 		memcpy(*parts, from_dev.data, from_dev.size + 1);
 	}
@@ -193,7 +198,8 @@ int read_partition(char *name, char *out_file)
 		}
 	}
 
-	printf("part_size: %zu\n", part_size);
+	printf("downloading %s, size: %zu bytes - %3u%% ", name, part_size, 0);
+	fflush(stdout);
 
 	buf = malloc(buf_size);
 	if (!buf) {
@@ -232,21 +238,28 @@ int read_partition(char *name, char *out_file)
 			return -1;
 		}
 
-		if (from_dev.size == 0) //EOF
-			break;
-
+#ifdef TRUNC_READ
 		int i;
-		for (i = (buf_size - 1); i >= 0; i--)
+		for (i = (from_dev.size - 1); i >= 0; i--)
 			if ((unsigned char)buf[i] != 0xff) {
 				last_ff = total_rcv + i;
 				break;
 			}
+#endif
+		if (from_dev.size)
+			write(fd, buf, from_dev.size);
 
-		write(fd, buf, buf_size);
 		total_rcv += buf_size;
+
+		printf("\b\b\b\b\b%3u%% ", calc_persent(total_rcv, part_size));
+		fflush(stdout);
 	}
 
+	printf("\b\b\b\b\b100%% DONE\n");
+
+#ifdef TRUNC_READ
 	ftruncate(fd, last_ff + 1);
+#endif
 
 	free(buf);
 	close(fd);
@@ -549,10 +562,7 @@ int main(int argc, char *argv[])
 				free(buf_ptr);
 		break;
 		case READ_PART:
-			printf("read [%s] partition ", part_name);
-			if (!read_partition(part_name, file_name))
-				printf("DONE\n");
-			else
+			if (read_partition(part_name, file_name))
 				printf("failed\n");
 		break;
 		case ERASE_PART:
