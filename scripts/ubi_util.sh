@@ -107,7 +107,7 @@ mount_ubi () {
 	echo "DONE"
 
 	echo -n "attaching $MTD_DEV to ubi0 ... "
-	ubiattach -m `echo $MTD_DEV | grep -o [0-9]*` -d 0 -O 4096 > /dev/null 2>&1
+	ubiattach -m `echo $MTD_DEV | sed s/[^0-9]//g` -d 0 -O 4096 > /dev/null 2>&1
 	if [ $? -ne 0 ]
 	then
 		echo "failed"
@@ -195,6 +195,12 @@ then
 		exit 1
 	fi
 
+	if [ `id -u` -ne 0 ]
+	then
+		echo " pls, use \"sudo\" for execute"
+		exit 1
+	fi
+
 	echo "Mounting $2 to $3:"
 
 	mount_ubi $2 $3
@@ -245,12 +251,17 @@ then
 		exit 1
 	fi
 
+	if [ `id -u` -ne 0 ]
+	then
+		echo " pls, use \"sudo\" for execute"
+		exit 1
+	fi
+
 	echo "Repacking image"
 
 	TMP_MOUNT_POINT=/tmp/ubi_tmp_mnt
 
-	mkdir -p $TMP_MOUNT_POINT 
-	#> /dev/null 2>&1
+	mkdir -p $TMP_MOUNT_POINT > /dev/null 2>&1
 
 	mount_ubi $2 $TMP_MOUNT_POINT
 	if [ $? -eq 0 ]
